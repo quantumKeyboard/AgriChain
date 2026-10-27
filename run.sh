@@ -12,7 +12,7 @@ else
   . .venv/bin/activate
 fi
 [ -f .env ] || cp .env.example .env
-[ -f artifacts/model.joblib ] || { python scripts/generate_dataset.py && python scripts/train_model.py; }
+python -c "from app.ml.scorer import load_bundle; load_bundle()" 2>/dev/null || { python scripts/generate_dataset.py && python scripts/train_model.py; }
 
 cd "$ROOT/frontend"
 [ -d node_modules ] || npm install

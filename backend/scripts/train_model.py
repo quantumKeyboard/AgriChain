@@ -237,7 +237,7 @@ def main() -> None:
         ],
         "feature_importance": importances,
     }
-    (ARTIFACTS_DIR / "metrics.json").write_text(json.dumps(metrics, indent=2))
+    (ARTIFACTS_DIR / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
 
     print(f"model {version} saved")
     print(pd.DataFrame(ablation).to_string(index=False))

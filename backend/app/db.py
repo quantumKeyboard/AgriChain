@@ -7,8 +7,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.config import DATA_DIR, settings
 
-if settings.db_url.startswith("sqlite:///./") or settings.db_url.startswith(f"sqlite:///{DATA_DIR}"):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 engine = create_engine(settings.db_url, connect_args={"check_same_thread": False})
 

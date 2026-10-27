@@ -11,7 +11,32 @@ see exactly where history was altered.
 
 ## Run it
 
-Requirements: Python 3.11+, Node 20+.
+Requirements: **Python 3.11–3.13** and **Node.js 20+** (LTS).
+
+### Windows
+
+1. Install [Python 3.12](https://www.python.org/downloads/) (tick **"Add python.exe to PATH"**) and the [Node.js LTS](https://nodejs.org/).
+2. Unzip the project somewhere without spaces in the path, e.g. `C:\dev\agrichain`.
+3. **Double-click `run.bat`.** The first run installs everything (a few minutes). The API opens in a second window and the browser opens http://localhost:5173.
+4. Press `Ctrl+C` in the first window to stop both.
+
+Manual steps in PowerShell, if you prefer:
+
+```powershell
+cd backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1          # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+pip install -e ".[dev]"
+copy .env.example .env
+uvicorn app.main:app --port 8000
+
+# second PowerShell window
+cd frontend
+npm install
+npm run dev
+```
+
+### macOS / Linux
 
 ```bash
 ./run.sh            # first run installs everything; then UI → http://localhost:5173, API docs → http://localhost:8000/docs
@@ -34,6 +59,12 @@ cd frontend && npm install && npm run dev
 ```
 
 The trained model (`backend/artifacts/model.joblib`) and its metrics are committed, so the demo works without retraining.
+If your scikit-learn differs and the model can't load, `run.bat`/`run.sh` retrain automatically (~10 s), or run
+`python scripts/generate_dataset.py` then `python scripts/train_model.py` from `backend/`.
+
+**Troubleshooting:** *port already in use* → close the old API window (or `netstat -ano | findstr :8000`, then end that PID).
+*`npm` not recognised* → reopen the terminal after installing Node. *Blank page* → make sure the API window shows
+`Application startup complete`.
 
 ## The 5-minute demo
 

@@ -6,7 +6,7 @@ import pytest
 
 # Point the app at a throwaway database before anything imports app.config / app.db.
 _TMP = Path(tempfile.mkdtemp()) / "test.db"
-os.environ["DB_URL"] = f"sqlite:///{_TMP}"
+os.environ["DB_URL"] = f"sqlite:///{_TMP.as_posix()}"
 os.environ["DEMO_MODE"] = "true"
 
 

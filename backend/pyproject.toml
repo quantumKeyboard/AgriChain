@@ -2,12 +2,12 @@
 name = "agrichain-sentinel"
 version = "0.1.0"
 description = "ML-driven blockchain framework for detecting fraudulent agricultural supply-chain transactions"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "sqlmodel",
-    "scikit-learn",
+    "scikit-learn>=1.9,<1.10",  # pinned: artifacts/model.joblib is a pickle
     "pandas",
     "numpy",
     "shap",
