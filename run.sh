@@ -7,7 +7,7 @@ cd "$ROOT/backend"
 if [ ! -d .venv ]; then
   python3 -m venv .venv
   . .venv/bin/activate
-  pip install -q -e ".[dev]"
+  pip install -q -r requirements-dev.txt
 else
   . .venv/bin/activate
 fi

@@ -3,7 +3,7 @@
 ## Project
 AgriChain Sentinel — a web app that scores agricultural supply-chain transactions for fraud (ML + rules) before committing them to a tamper-evident hash-chained ledger.
 Core job: catch fraudulent agri supply-chain transactions before they are recorded, and keep an auditable, tamper-evident record of every decision.
-Full design, scope and reasoning: see `DESIGN.md`. Read it before starting a milestone.
+Full design, scope and reasoning: see `DESIGN.md`. Technical overview: `Project-Map.md`. Read them before starting a milestone.
 
 ## Stack
 - Backend: Python 3.11+, FastAPI, Uvicorn, SQLModel + SQLite (WAL mode)
@@ -25,7 +25,7 @@ ruff check . && ruff format --check .
 
 # everything at once (from repo root)
 ./run.sh                    # macOS / Linux
-run.bat                     # Windows (wraps run.ps1); venv python is backend\.venv\Scripts\python.exe
+run.bat                     # Windows menu launcher (plain cmd; venv if allowed, else pip --user)
 
 # frontend (from frontend/)
 npm install
@@ -67,7 +67,7 @@ docs/ui-references/   UI references from the team — look here before building 
 - Python: type hints on public functions, Pydantic schemas for every request/response. TS: strict mode, no `any`, API types in `src/api/types.ts`.
 - Colours: green/amber/red are reserved for clear/flagged/quarantined. Every risk badge has an icon + label (not colour alone). Every chart has a title, units and an empty state.
 - Secrets/config via env only; never commit `.env`; keep `.env.example` current. `/api/dev/*` routes exist only when `DEMO_MODE=true`.
-- Cross-platform: the team develops on Windows. Use `pathlib` (never hard-coded `/` paths), pass `encoding="utf-8"` to file reads/writes, keep `run.ps1` pure ASCII, and keep `run.sh` and `run.ps1`/`run.bat` in sync.
+- Cross-platform: the team develops on Windows. Use `pathlib` (never hard-coded `/` paths), pass `encoding="utf-8"` to file reads/writes, keep `run.bat` pure ASCII with CRLF endings, never upgrade pip in launchers, and keep `run.sh` and `run.bat` in sync. Python deps live in both `pyproject.toml` and `backend/requirements*.txt` — update both.
 - Commits: small, imperative subject (`Add duplicate-invoice rule`).
 
 ## Scope guardrails — do not build

@@ -1,0 +1,11 @@
+# Runtime dependencies (same as pyproject.toml). Plain file so `pip install -r` works with any pip version.
+fastapi
+uvicorn[standard]
+sqlmodel
+scikit-learn>=1.9,<1.10
+pandas
+numpy
+shap
+joblib
+python-dotenv
+networkx

@@ -16,21 +16,32 @@ Requirements: **Python 3.11–3.13** and **Node.js 20+** (LTS).
 ### Windows
 
 1. Install [Python 3.12](https://www.python.org/downloads/) (tick **"Add python.exe to PATH"**) and the [Node.js LTS](https://nodejs.org/).
-2. Unzip the project somewhere without spaces in the path, e.g. `C:\dev\agrichain`.
-3. **Double-click `run.bat`.** The first run installs everything (a few minutes). The API opens in a second window and the browser opens http://localhost:5173.
-4. Press `Ctrl+C` in the first window to stop both.
+2. Unzip the project, e.g. to `C:\dev\agrichain`.
+3. **Double-click `run.bat`.** A menu opens:
 
-Manual steps in PowerShell, if you prefer:
+```
+   [1]  Start the app        (API + UI, opens browser)
+   [2]  Setup / repair       (install everything)
+   [3]  Open app in browser
+   [4]  Stop the app
+   [5]  Start API only       [6]  Start UI only
+   [7]  Reset demo data      [8]  Retrain the ML model
+   [9]  Run tests            [0]  Exit
+```
 
-```powershell
+Press **2** once (first time only, a few minutes), then **1** whenever you want to run it. The header shows which Python
+it found and whether setup is complete. `run.bat` is plain `cmd`: it needs no PowerShell and never upgrades pip. If
+virtual environments are blocked on your PC, it installs the packages into your user Python (`pip install --user`) instead.
+
+Manual alternative (Command Prompt):
+
+```bat
 cd backend
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1          # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-pip install -e ".[dev]"
+py -3.12 -m pip install --user -r requirements-dev.txt
 copy .env.example .env
-uvicorn app.main:app --port 8000
+py -3.12 -m uvicorn app.main:app --port 8000
 
-# second PowerShell window
+rem second Command Prompt
 cd frontend
 npm install
 npm run dev
@@ -59,10 +70,10 @@ cd frontend && npm install && npm run dev
 ```
 
 The trained model (`backend/artifacts/model.joblib`) and its metrics are committed, so the demo works without retraining.
-If your scikit-learn differs and the model can't load, `run.bat`/`run.sh` retrain automatically (~10 s), or run
+If your scikit-learn differs and the model can't load, setup (`run.bat` → 2, or `run.sh`) retrains automatically (~10 s), or run
 `python scripts/generate_dataset.py` then `python scripts/train_model.py` from `backend/`.
 
-**Troubleshooting:** *port already in use* → close the old API window (or `netstat -ano | findstr :8000`, then end that PID).
+**Troubleshooting:** *port already in use* → `run.bat` → **4** (Stop the app).
 *`npm` not recognised* → reopen the terminal after installing Node. *Blank page* → make sure the API window shows
 `Application startup complete`.
 
@@ -131,4 +142,4 @@ cd frontend && npm test && npm run typecheck && npm run lint && npm run build
 
 ## Layout
 
-See `CLAUDE.md` (agent instructions) and `DESIGN.md` (full design, scope and reasoning).
+See **`Project-Map.md`** (complete technical overview), `DESIGN.md` (design, scope and reasoning) and `CLAUDE.md` (agent instructions).
