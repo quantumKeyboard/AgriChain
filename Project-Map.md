@@ -270,7 +270,8 @@ colour-blind separation on the dark surface. Every badge pairs colour with an ic
 ```
 agrichain/
 ├── run.bat                  Windows launcher (menu: start, setup, stop, reset, retrain, tests)
-├── run.sh                   macOS/Linux launcher
+├── run.sh                   macOS/Linux launcher (same menu; API/UI in background, logs in .run/)
+├── run.command              macOS: double-click in Finder → runs run.sh
 ├── README.md                How to run + demo script + viva FAQ
 ├── Project-Map.md           This file
 ├── DESIGN.md                Design, scope (MVP/V1/Later/Cut), milestones, risks

@@ -24,7 +24,7 @@ pytest -q
 ruff check . && ruff format --check .
 
 # everything at once (from repo root)
-./run.sh                    # macOS / Linux
+./run.sh                    # macOS / Linux menu launcher (macOS Finder: double-click run.command)
 run.bat                     # Windows menu launcher (plain cmd; venv if allowed, else pip --user)
 
 # frontend (from frontend/)
@@ -67,7 +67,7 @@ docs/ui-references/   UI references from the team — look here before building 
 - Python: type hints on public functions, Pydantic schemas for every request/response. TS: strict mode, no `any`, API types in `src/api/types.ts`.
 - Colours: green/amber/red are reserved for clear/flagged/quarantined. Every risk badge has an icon + label (not colour alone). Every chart has a title, units and an empty state.
 - Secrets/config via env only; never commit `.env`; keep `.env.example` current. `/api/dev/*` routes exist only when `DEMO_MODE=true`.
-- Cross-platform: the team develops on Windows. Use `pathlib` (never hard-coded `/` paths), pass `encoding="utf-8"` to file reads/writes, keep `run.bat` pure ASCII with CRLF endings, never upgrade pip in launchers, and keep `run.sh` and `run.bat` in sync. Python deps live in both `pyproject.toml` and `backend/requirements*.txt` — update both.
+- Cross-platform: the team develops on Windows. Use `pathlib` (never hard-coded `/` paths), pass `encoding="utf-8"` to file reads/writes, keep `run.bat` pure ASCII with CRLF endings, never upgrade pip in launchers, and keep `run.sh` and `run.bat` in sync (same menu numbers). `run.sh` must stay bash 3.2-compatible (macOS default): no `mapfile`, associative arrays or `${x,,}`. Python deps live in both `pyproject.toml` and `backend/requirements*.txt` — update both.
 - Commits: small, imperative subject (`Add duplicate-invoice rule`).
 
 ## Scope guardrails — do not build

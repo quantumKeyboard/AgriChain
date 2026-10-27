@@ -47,10 +47,22 @@ npm install
 npm run dev
 ```
 
-### macOS / Linux
+### macOS
+
+1. Install [Python 3.12](https://www.python.org/downloads/macos/) (or `brew install python@3.12`) and the [Node.js LTS](https://nodejs.org/) (or `brew install node`).
+2. Unzip the project.
+3. **Double-click `run.command`** in Finder. The first time, macOS may say it's from an unidentified developer:
+   right-click `run.command` → **Open** → **Open** (only needed once). If it says the file isn't executable,
+   open Terminal in the folder and run `chmod +x run.sh run.command`.
+4. The same menu as on Windows opens. Press **2** once for setup, then **1** to start. The browser opens http://localhost:5173.
+
+The API and UI run in the background, so closing the Terminal window doesn't stop them. Use **4** to stop them
+and **L** to see their logs (`.run/api.log`, `.run/ui.log`).
+
+### Linux (or macOS from Terminal)
 
 ```bash
-./run.sh            # first run installs everything; then UI → http://localhost:5173, API docs → http://localhost:8000/docs
+./run.sh            # same menu; or: ./run.sh setup | ./run.sh start | ./run.sh stop
 ```
 
 Or manually:
@@ -70,10 +82,10 @@ cd frontend && npm install && npm run dev
 ```
 
 The trained model (`backend/artifacts/model.joblib`) and its metrics are committed, so the demo works without retraining.
-If your scikit-learn differs and the model can't load, setup (`run.bat` → 2, or `run.sh`) retrains automatically (~10 s), or run
+If your scikit-learn differs and the model can't load, setup (option **2** in `run.bat` / `run.command` / `run.sh`) retrains automatically (~10 s), or run
 `python scripts/generate_dataset.py` then `python scripts/train_model.py` from `backend/`.
 
-**Troubleshooting:** *`Read timed out` during setup* → slow/unstable internet; press **2** again (finished downloads are cached and it resumes), or try another network / hotspot. *port already in use* → `run.bat` → **4** (Stop the app).
+**Troubleshooting:** *`Read timed out` during setup* → slow/unstable internet; press **2** again (finished downloads are cached and it resumes), or try another network / hotspot. *port already in use* → launcher option **4** (Stop the app).
 *`npm` not recognised* → reopen the terminal after installing Node. *Blank page* → make sure the API window shows
 `Application startup complete`.
 
