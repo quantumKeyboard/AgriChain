@@ -73,7 +73,7 @@ The trained model (`backend/artifacts/model.joblib`) and its metrics are committ
 If your scikit-learn differs and the model can't load, setup (`run.bat` → 2, or `run.sh`) retrains automatically (~10 s), or run
 `python scripts/generate_dataset.py` then `python scripts/train_model.py` from `backend/`.
 
-**Troubleshooting:** *port already in use* → `run.bat` → **4** (Stop the app).
+**Troubleshooting:** *`Read timed out` during setup* → slow/unstable internet; press **2** again (finished downloads are cached and it resumes), or try another network / hotspot. *port already in use* → `run.bat` → **4** (Stop the app).
 *`npm` not recognised* → reopen the terminal after installing Node. *Blank page* → make sure the API window shows
 `Application startup complete`.
 

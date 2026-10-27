@@ -15,7 +15,8 @@ set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
 set "FRONTEND=%ROOT%frontend"
 set "VENV_PY=%BACKEND%\.venv\Scripts\python.exe"
-set "PIPFLAGS=--disable-pip-version-check --no-input"
+rem Long timeout + retries: slow or unstable connections otherwise abort big downloads.
+set "PIPFLAGS=--disable-pip-version-check --no-input --timeout 120 --retries 10"
 set "API_URL=http://localhost:8000"
 set "UI_URL=http://localhost:5173"
 set "PYTHONUTF8=1"
@@ -160,10 +161,10 @@ echo        Virtual environments are blocked here - using your user Python inste
 set "PYEXE=%BASEEXE%"
 set "PYARGS=%BASEARGS%"
 echo  [2/4] Installing Python packages for your user - a few minutes ...
-"%PYEXE%" %PYARGS% -m pip install %PIPFLAGS% --user -r "%BACKEND%\requirements-dev.txt"
+call :pip_install --user
 if not errorlevel 1 goto setup_env
 echo        Retrying without --user ...
-"%PYEXE%" %PYARGS% -m pip install %PIPFLAGS% -r "%BACKEND%\requirements-dev.txt"
+call :pip_install
 if errorlevel 1 goto setup_pip_failed
 goto setup_env
 
@@ -171,7 +172,7 @@ goto setup_env
 set "PYEXE=%VENV_PY%"
 set "PYARGS="
 echo  [2/4] Installing Python packages into backend\.venv - a few minutes ...
-"%PYEXE%" -m pip install %PIPFLAGS% -r "%BACKEND%\requirements-dev.txt"
+call :pip_install
 if errorlevel 1 goto setup_pip_failed
 
 :setup_env
@@ -202,9 +203,22 @@ goto done
 :setup_pip_failed
 echo.
 echo  [X] pip could not install the packages - see the messages above.
-echo      Common fixes: check your internet / proxy, or install Python 3.12
-echo      from python.org - other versions may lack prebuilt packages.
+echo      "Read timed out" = slow or unstable internet. Packages that finished
+echo      downloading are cached, so just press 2 again to continue.
+echo      Also try: a different network / mobile hotspot, or pausing VPN.
 goto done
+
+
+:pip_install
+rem Up to 3 attempts. pip caches finished downloads, so each retry resumes.
+rem %1 = optional --user
+for /l %%n in (1,1,3) do (
+    "%PYEXE%" %PYARGS% -m pip install %PIPFLAGS% %~1 -r "%BACKEND%\requirements-dev.txt" && exit /b 0
+    echo.
+    echo        Attempt %%n of 3 did not finish - network is slow, retrying ...
+    timeout /t 3 /nobreak >nul
+)
+exit /b 1
 
 
 :ensure_model
