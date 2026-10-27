@@ -1,0 +1,1268 @@
+{
+  "model_version": "rf-20261027-0753",
+  "trained_at": "2026-10-27T07:53:56",
+  "thresholds": {
+    "flag": 0.4,
+    "quarantine": 0.7
+  },
+  "weights": {
+    "ml": 0.6,
+    "rules": 0.25,
+    "anomaly": 0.15
+  },
+  "dataset": {
+    "rows": 20000,
+    "train_rows": 15000,
+    "test_rows": 5000,
+    "shifted_rows": 5000,
+    "fraud_rate": 0.0703,
+    "class_counts": {
+      "none": 18593,
+      "duplicate_invoice": 272,
+      "phantom_quantity": 257,
+      "cold_chain_concealed": 227,
+      "organic_label_fraud": 223,
+      "price_manipulation": 217,
+      "circular_trading": 211
+    }
+  },
+  "headline": {
+    "roc_auc": 0.9719,
+    "pr_auc": 0.9576,
+    "precision": 0.9795,
+    "recall": 0.9489,
+    "f1": 0.9639,
+    "shifted": {
+      "roc_auc": 0.9749,
+      "pr_auc": 0.9394,
+      "precision": 0.886,
+      "recall": 0.9293,
+      "f1": 0.9072
+    }
+  },
+  "ablation": [
+    {
+      "model": "Rules only",
+      "roc_auc": 0.9743,
+      "pr_auc": 0.9522,
+      "precision": 0.9489,
+      "recall": 0.9489,
+      "f1": 0.9489
+    },
+    {
+      "model": "Isolation Forest only",
+      "roc_auc": 0.7453,
+      "pr_auc": 0.3247,
+      "precision": 0.2875,
+      "recall": 0.4688,
+      "f1": 0.3564
+    },
+    {
+      "model": "Logistic Regression",
+      "roc_auc": 0.9734,
+      "pr_auc": 0.9574,
+      "precision": 0.9407,
+      "recall": 0.946,
+      "f1": 0.9433
+    },
+    {
+      "model": "Random Forest only",
+      "roc_auc": 0.9692,
+      "pr_auc": 0.9555,
+      "precision": 0.9911,
+      "recall": 0.946,
+      "f1": 0.968
+    },
+    {
+      "model": "Hybrid (RF + IF + rules)",
+      "roc_auc": 0.9719,
+      "pr_auc": 0.9576,
+      "precision": 0.9795,
+      "recall": 0.9489,
+      "f1": 0.9639
+    }
+  ],
+  "ablation_shifted": [
+    {
+      "model": "Rules only",
+      "roc_auc": 0.9691,
+      "pr_auc": 0.9338,
+      "precision": 0.8103,
+      "recall": 0.9402,
+      "f1": 0.8704
+    },
+    {
+      "model": "Random Forest only",
+      "roc_auc": 0.9726,
+      "pr_auc": 0.9473,
+      "precision": 0.9268,
+      "recall": 0.9293,
+      "f1": 0.9281
+    },
+    {
+      "model": "Hybrid (RF + IF + rules)",
+      "roc_auc": 0.9749,
+      "pr_auc": 0.9394,
+      "precision": 0.886,
+      "recall": 0.9293,
+      "f1": 0.9072
+    }
+  ],
+  "per_type": [
+    {
+      "type": "price_manipulation",
+      "label": "Price manipulation",
+      "support": 54,
+      "recall": 0.9444,
+      "type_accuracy": 0.9444,
+      "recall_shifted": 0.8065
+    },
+    {
+      "type": "phantom_quantity",
+      "label": "Phantom quantity",
+      "support": 64,
+      "recall": 0.9844,
+      "type_accuracy": 0.9844,
+      "recall_shifted": 0.9455
+    },
+    {
+      "type": "organic_label_fraud",
+      "label": "Organic label fraud",
+      "support": 56,
+      "recall": 0.9464,
+      "type_accuracy": 0.9464,
+      "recall_shifted": 0.9474
+    },
+    {
+      "type": "cold_chain_concealed",
+      "label": "Concealed cold-chain breach",
+      "support": 57,
+      "recall": 0.9474,
+      "type_accuracy": 0.9474,
+      "recall_shifted": 0.9552
+    },
+    {
+      "type": "circular_trading",
+      "label": "Circular trading",
+      "support": 53,
+      "recall": 0.9245,
+      "type_accuracy": 0.9245,
+      "recall_shifted": 0.973
+    },
+    {
+      "type": "duplicate_invoice",
+      "label": "Duplicate invoice",
+      "support": 68,
+      "recall": 0.9412,
+      "type_accuracy": 0.9412,
+      "recall_shifted": 0.9434
+    }
+  ],
+  "confusion_matrix": {
+    "labels": [
+      "none",
+      "price_manipulation",
+      "phantom_quantity",
+      "organic_label_fraud",
+      "cold_chain_concealed",
+      "circular_trading",
+      "duplicate_invoice"
+    ],
+    "display": [
+      "Legitimate",
+      "Price manipulation",
+      "Phantom quantity",
+      "Organic label fraud",
+      "Concealed cold-chain breach",
+      "Circular trading",
+      "Duplicate invoice"
+    ],
+    "matrix": [
+      [
+        4641,
+        6,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        51,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        63,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        0,
+        0,
+        53,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        0,
+        0,
+        0,
+        54,
+        0,
+        0
+      ],
+      [
+        4,
+        0,
+        0,
+        0,
+        0,
+        49,
+        0
+      ],
+      [
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        64
+      ]
+    ]
+  },
+  "roc": {
+    "hybrid": [
+      {
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "x": 0.0,
+        "y": 0.0028
+      },
+      {
+        "x": 0.0,
+        "y": 0.6165
+      },
+      {
+        "x": 0.0,
+        "y": 0.6307
+      },
+      {
+        "x": 0.0,
+        "y": 0.6335
+      },
+      {
+        "x": 0.0,
+        "y": 0.6392
+      },
+      {
+        "x": 0.0,
+        "y": 0.6619
+      },
+      {
+        "x": 0.0,
+        "y": 0.6733
+      },
+      {
+        "x": 0.0,
+        "y": 0.679
+      },
+      {
+        "x": 0.0,
+        "y": 0.6875
+      },
+      {
+        "x": 0.0,
+        "y": 0.7074
+      },
+      {
+        "x": 0.0,
+        "y": 0.7131
+      },
+      {
+        "x": 0.0,
+        "y": 0.7585
+      },
+      {
+        "x": 0.0,
+        "y": 0.7642
+      },
+      {
+        "x": 0.0,
+        "y": 0.9347
+      },
+      {
+        "x": 0.0002,
+        "y": 0.9347
+      },
+      {
+        "x": 0.0002,
+        "y": 0.9375
+      },
+      {
+        "x": 0.0004,
+        "y": 0.9375
+      },
+      {
+        "x": 0.0004,
+        "y": 0.9432
+      },
+      {
+        "x": 0.0006,
+        "y": 0.9432
+      },
+      {
+        "x": 0.0006,
+        "y": 0.946
+      },
+      {
+        "x": 0.0011,
+        "y": 0.946
+      },
+      {
+        "x": 0.0011,
+        "y": 0.9489
+      },
+      {
+        "x": 0.0566,
+        "y": 0.9489
+      },
+      {
+        "x": 0.0566,
+        "y": 0.9517
+      },
+      {
+        "x": 0.065,
+        "y": 0.9517
+      },
+      {
+        "x": 0.065,
+        "y": 0.9545
+      },
+      {
+        "x": 0.1889,
+        "y": 0.9545
+      },
+      {
+        "x": 0.1889,
+        "y": 0.9574
+      },
+      {
+        "x": 0.3257,
+        "y": 0.9574
+      },
+      {
+        "x": 0.3257,
+        "y": 0.9602
+      },
+      {
+        "x": 0.3259,
+        "y": 0.9602
+      },
+      {
+        "x": 0.3259,
+        "y": 0.9631
+      },
+      {
+        "x": 0.338,
+        "y": 0.9631
+      },
+      {
+        "x": 0.338,
+        "y": 0.9659
+      },
+      {
+        "x": 0.457,
+        "y": 0.9659
+      },
+      {
+        "x": 0.457,
+        "y": 0.9688
+      },
+      {
+        "x": 0.4869,
+        "y": 0.9688
+      },
+      {
+        "x": 0.4869,
+        "y": 0.9716
+      },
+      {
+        "x": 0.5004,
+        "y": 0.9716
+      },
+      {
+        "x": 0.5004,
+        "y": 0.9744
+      },
+      {
+        "x": 0.5553,
+        "y": 0.9744
+      },
+      {
+        "x": 0.5553,
+        "y": 0.9773
+      },
+      {
+        "x": 0.5897,
+        "y": 0.9773
+      },
+      {
+        "x": 0.5897,
+        "y": 0.9801
+      },
+      {
+        "x": 0.6114,
+        "y": 0.9801
+      },
+      {
+        "x": 0.6114,
+        "y": 0.983
+      },
+      {
+        "x": 0.7687,
+        "y": 0.983
+      },
+      {
+        "x": 0.7687,
+        "y": 0.9858
+      },
+      {
+        "x": 0.8343,
+        "y": 0.9858
+      },
+      {
+        "x": 0.8343,
+        "y": 0.9886
+      },
+      {
+        "x": 0.9154,
+        "y": 0.9886
+      },
+      {
+        "x": 0.9154,
+        "y": 0.9915
+      },
+      {
+        "x": 0.9303,
+        "y": 0.9915
+      },
+      {
+        "x": 0.9303,
+        "y": 0.9943
+      },
+      {
+        "x": 0.9501,
+        "y": 0.9943
+      },
+      {
+        "x": 0.9501,
+        "y": 0.9972
+      },
+      {
+        "x": 0.9953,
+        "y": 0.9972
+      },
+      {
+        "x": 0.9953,
+        "y": 1.0
+      },
+      {
+        "x": 1.0,
+        "y": 1.0
+      }
+    ],
+    "rules": [
+      {
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "x": 0.0,
+        "y": 0.2642
+      },
+      {
+        "x": 0.0,
+        "y": 0.2869
+      },
+      {
+        "x": 0.0,
+        "y": 0.2926
+      },
+      {
+        "x": 0.0,
+        "y": 0.304
+      },
+      {
+        "x": 0.0,
+        "y": 0.3097
+      },
+      {
+        "x": 0.0,
+        "y": 0.3153
+      },
+      {
+        "x": 0.0,
+        "y": 0.3295
+      },
+      {
+        "x": 0.0,
+        "y": 0.3352
+      },
+      {
+        "x": 0.0,
+        "y": 0.5142
+      },
+      {
+        "x": 0.0,
+        "y": 0.517
+      },
+      {
+        "x": 0.0,
+        "y": 0.5284
+      },
+      {
+        "x": 0.0,
+        "y": 0.5369
+      },
+      {
+        "x": 0.0,
+        "y": 0.6761
+      },
+      {
+        "x": 0.0,
+        "y": 0.679
+      },
+      {
+        "x": 0.0,
+        "y": 0.6875
+      },
+      {
+        "x": 0.0,
+        "y": 0.6903
+      },
+      {
+        "x": 0.0,
+        "y": 0.6989
+      },
+      {
+        "x": 0.0,
+        "y": 0.8523
+      },
+      {
+        "x": 0.0,
+        "y": 0.8636
+      },
+      {
+        "x": 0.0,
+        "y": 0.875
+      },
+      {
+        "x": 0.0,
+        "y": 0.8778
+      },
+      {
+        "x": 0.0,
+        "y": 0.8835
+      },
+      {
+        "x": 0.0,
+        "y": 0.9006
+      },
+      {
+        "x": 0.0,
+        "y": 0.9091
+      },
+      {
+        "x": 0.0,
+        "y": 0.9148
+      },
+      {
+        "x": 0.0,
+        "y": 0.9205
+      },
+      {
+        "x": 0.0,
+        "y": 0.9233
+      },
+      {
+        "x": 0.0002,
+        "y": 0.9318
+      },
+      {
+        "x": 0.0006,
+        "y": 0.9375
+      },
+      {
+        "x": 0.0013,
+        "y": 0.9432
+      },
+      {
+        "x": 0.0015,
+        "y": 0.946
+      },
+      {
+        "x": 0.0019,
+        "y": 0.9489
+      },
+      {
+        "x": 0.0022,
+        "y": 0.9489
+      },
+      {
+        "x": 0.003,
+        "y": 0.9489
+      },
+      {
+        "x": 0.0034,
+        "y": 0.9489
+      },
+      {
+        "x": 0.0039,
+        "y": 0.9489
+      },
+      {
+        "x": 1.0,
+        "y": 1.0
+      }
+    ]
+  },
+  "pr": [
+    {
+      "x": 0.0,
+      "y": 1.0
+    },
+    {
+      "x": 0.2386,
+      "y": 1.0
+    },
+    {
+      "x": 0.4801,
+      "y": 1.0
+    },
+    {
+      "x": 0.75,
+      "y": 1.0
+    },
+    {
+      "x": 0.9489,
+      "y": 0.9543
+    },
+    {
+      "x": 0.9489,
+      "y": 0.7696
+    },
+    {
+      "x": 0.9489,
+      "y": 0.6435
+    },
+    {
+      "x": 0.9517,
+      "y": 0.5556
+    },
+    {
+      "x": 0.9545,
+      "y": 0.4884
+    },
+    {
+      "x": 0.9545,
+      "y": 0.4352
+    },
+    {
+      "x": 0.9545,
+      "y": 0.3921
+    },
+    {
+      "x": 0.9545,
+      "y": 0.3571
+    },
+    {
+      "x": 0.9545,
+      "y": 0.3275
+    },
+    {
+      "x": 0.9545,
+      "y": 0.3024
+    },
+    {
+      "x": 0.9545,
+      "y": 0.2812
+    },
+    {
+      "x": 0.9574,
+      "y": 0.2633
+    },
+    {
+      "x": 0.9574,
+      "y": 0.2471
+    },
+    {
+      "x": 0.9574,
+      "y": 0.2326
+    },
+    {
+      "x": 0.9574,
+      "y": 0.2198
+    },
+    {
+      "x": 0.9574,
+      "y": 0.2083
+    },
+    {
+      "x": 0.9574,
+      "y": 0.198
+    },
+    {
+      "x": 0.9574,
+      "y": 0.1886
+    },
+    {
+      "x": 0.9631,
+      "y": 0.1812
+    },
+    {
+      "x": 0.9659,
+      "y": 0.1738
+    },
+    {
+      "x": 0.9659,
+      "y": 0.1666
+    },
+    {
+      "x": 0.9659,
+      "y": 0.16
+    },
+    {
+      "x": 0.9659,
+      "y": 0.1538
+    },
+    {
+      "x": 0.9659,
+      "y": 0.1482
+    },
+    {
+      "x": 0.9659,
+      "y": 0.1429
+    },
+    {
+      "x": 0.9659,
+      "y": 0.138
+    },
+    {
+      "x": 0.9688,
+      "y": 0.1338
+    },
+    {
+      "x": 0.9716,
+      "y": 0.1299
+    },
+    {
+      "x": 0.9744,
+      "y": 0.1262
+    },
+    {
+      "x": 0.9744,
+      "y": 0.1225
+    },
+    {
+      "x": 0.9744,
+      "y": 0.1188
+    },
+    {
+      "x": 0.9773,
+      "y": 0.1158
+    },
+    {
+      "x": 0.9773,
+      "y": 0.1126
+    },
+    {
+      "x": 0.9801,
+      "y": 0.1099
+    },
+    {
+      "x": 0.983,
+      "y": 0.1073
+    },
+    {
+      "x": 0.983,
+      "y": 0.1046
+    },
+    {
+      "x": 0.983,
+      "y": 0.102
+    },
+    {
+      "x": 0.983,
+      "y": 0.0995
+    },
+    {
+      "x": 0.983,
+      "y": 0.0971
+    },
+    {
+      "x": 0.983,
+      "y": 0.0949
+    },
+    {
+      "x": 0.983,
+      "y": 0.0927
+    },
+    {
+      "x": 0.983,
+      "y": 0.0907
+    },
+    {
+      "x": 0.983,
+      "y": 0.0887
+    },
+    {
+      "x": 0.9858,
+      "y": 0.0871
+    },
+    {
+      "x": 0.9858,
+      "y": 0.0853
+    },
+    {
+      "x": 0.9858,
+      "y": 0.0835
+    },
+    {
+      "x": 0.9886,
+      "y": 0.0821
+    },
+    {
+      "x": 0.9886,
+      "y": 0.0805
+    },
+    {
+      "x": 0.9886,
+      "y": 0.0789
+    },
+    {
+      "x": 0.9886,
+      "y": 0.0775
+    },
+    {
+      "x": 0.9886,
+      "y": 0.076
+    },
+    {
+      "x": 0.9915,
+      "y": 0.0749
+    },
+    {
+      "x": 0.9943,
+      "y": 0.0737
+    },
+    {
+      "x": 0.9972,
+      "y": 0.0727
+    },
+    {
+      "x": 0.9972,
+      "y": 0.0714
+    },
+    {
+      "x": 1.0,
+      "y": 0.0704
+    }
+  ],
+  "threshold_sweep": [
+    {
+      "threshold": 0.05,
+      "tp": 348,
+      "fp": 4131,
+      "fn": 4,
+      "tn": 517,
+      "precision": 0.0777,
+      "recall": 0.9886
+    },
+    {
+      "threshold": 0.1,
+      "tp": 337,
+      "fp": 1094,
+      "fn": 15,
+      "tn": 3554,
+      "precision": 0.2355,
+      "recall": 0.9574
+    },
+    {
+      "threshold": 0.15,
+      "tp": 334,
+      "fp": 237,
+      "fn": 18,
+      "tn": 4411,
+      "precision": 0.5849,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.2,
+      "tp": 334,
+      "fp": 47,
+      "fn": 18,
+      "tn": 4601,
+      "precision": 0.8766,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.25,
+      "tp": 334,
+      "fp": 20,
+      "fn": 18,
+      "tn": 4628,
+      "precision": 0.9435,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.3,
+      "tp": 334,
+      "fp": 16,
+      "fn": 18,
+      "tn": 4632,
+      "precision": 0.9543,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.35,
+      "tp": 334,
+      "fp": 12,
+      "fn": 18,
+      "tn": 4636,
+      "precision": 0.9653,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.4,
+      "tp": 334,
+      "fp": 7,
+      "fn": 18,
+      "tn": 4641,
+      "precision": 0.9795,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.45,
+      "tp": 334,
+      "fp": 7,
+      "fn": 18,
+      "tn": 4641,
+      "precision": 0.9795,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.5,
+      "tp": 334,
+      "fp": 5,
+      "fn": 18,
+      "tn": 4643,
+      "precision": 0.9853,
+      "recall": 0.9489
+    },
+    {
+      "threshold": 0.55,
+      "tp": 332,
+      "fp": 3,
+      "fn": 20,
+      "tn": 4645,
+      "precision": 0.991,
+      "recall": 0.9432
+    },
+    {
+      "threshold": 0.6,
+      "tp": 332,
+      "fp": 3,
+      "fn": 20,
+      "tn": 4645,
+      "precision": 0.991,
+      "recall": 0.9432
+    },
+    {
+      "threshold": 0.65,
+      "tp": 329,
+      "fp": 1,
+      "fn": 23,
+      "tn": 4647,
+      "precision": 0.997,
+      "recall": 0.9347
+    },
+    {
+      "threshold": 0.7,
+      "tp": 322,
+      "fp": 0,
+      "fn": 30,
+      "tn": 4648,
+      "precision": 1.0,
+      "recall": 0.9148
+    },
+    {
+      "threshold": 0.75,
+      "tp": 314,
+      "fp": 0,
+      "fn": 38,
+      "tn": 4648,
+      "precision": 1.0,
+      "recall": 0.892
+    },
+    {
+      "threshold": 0.8,
+      "tp": 284,
+      "fp": 0,
+      "fn": 68,
+      "tn": 4648,
+      "precision": 1.0,
+      "recall": 0.8068
+    },
+    {
+      "threshold": 0.85,
+      "tp": 171,
+      "fp": 0,
+      "fn": 181,
+      "tn": 4648,
+      "precision": 1.0,
+      "recall": 0.4858
+    },
+    {
+      "threshold": 0.9,
+      "tp": 106,
+      "fp": 0,
+      "fn": 246,
+      "tn": 4648,
+      "precision": 1.0,
+      "recall": 0.3011
+    },
+    {
+      "threshold": 0.95,
+      "tp": 26,
+      "fp": 0,
+      "fn": 326,
+      "tn": 4648,
+      "precision": 1.0,
+      "recall": 0.0739
+    }
+  ],
+  "score_hist": [
+    {
+      "bin": 0.0,
+      "legit": 517,
+      "fraud": 4
+    },
+    {
+      "bin": 0.05,
+      "legit": 3037,
+      "fraud": 11
+    },
+    {
+      "bin": 0.1,
+      "legit": 857,
+      "fraud": 3
+    },
+    {
+      "bin": 0.15,
+      "legit": 190,
+      "fraud": 0
+    },
+    {
+      "bin": 0.2,
+      "legit": 27,
+      "fraud": 0
+    },
+    {
+      "bin": 0.25,
+      "legit": 4,
+      "fraud": 0
+    },
+    {
+      "bin": 0.3,
+      "legit": 4,
+      "fraud": 0
+    },
+    {
+      "bin": 0.35,
+      "legit": 5,
+      "fraud": 0
+    },
+    {
+      "bin": 0.4,
+      "legit": 0,
+      "fraud": 0
+    },
+    {
+      "bin": 0.45,
+      "legit": 2,
+      "fraud": 0
+    },
+    {
+      "bin": 0.5,
+      "legit": 2,
+      "fraud": 2
+    },
+    {
+      "bin": 0.55,
+      "legit": 0,
+      "fraud": 0
+    },
+    {
+      "bin": 0.6,
+      "legit": 2,
+      "fraud": 3
+    },
+    {
+      "bin": 0.65,
+      "legit": 1,
+      "fraud": 7
+    },
+    {
+      "bin": 0.7,
+      "legit": 0,
+      "fraud": 8
+    },
+    {
+      "bin": 0.75,
+      "legit": 0,
+      "fraud": 30
+    },
+    {
+      "bin": 0.8,
+      "legit": 0,
+      "fraud": 113
+    },
+    {
+      "bin": 0.85,
+      "legit": 0,
+      "fraud": 65
+    },
+    {
+      "bin": 0.9,
+      "legit": 0,
+      "fraud": 80
+    },
+    {
+      "bin": 0.95,
+      "legit": 0,
+      "fraud": 26
+    }
+  ],
+  "feature_importance": [
+    {
+      "feature": "qty_vs_capacity",
+      "label": "Quantity vs. what seller could have",
+      "importance": 0.1449
+    },
+    {
+      "feature": "buyer_in_trail",
+      "label": "Buyer already handled this batch",
+      "importance": 0.1307
+    },
+    {
+      "feature": "abs_price_deviation",
+      "label": "Size of price deviation",
+      "importance": 0.1107
+    },
+    {
+      "feature": "organic_mismatch",
+      "label": "Organic claim without certificate",
+      "importance": 0.0995
+    },
+    {
+      "feature": "duplicate_seen",
+      "label": "Identical invoice seen before",
+      "importance": 0.0974
+    },
+    {
+      "feature": "cold_chain_concealed",
+      "label": "Breach hidden behind 'cold chain OK'",
+      "importance": 0.0883
+    },
+    {
+      "feature": "price_deviation",
+      "label": "Price vs. market reference",
+      "importance": 0.0861
+    },
+    {
+      "feature": "temp_over_limit",
+      "label": "Max temperature over crop limit (\u00b0C)",
+      "importance": 0.0581
+    },
+    {
+      "feature": "pair_count_7d",
+      "label": "Same seller\u2192buyer trades in 7 days",
+      "importance": 0.0527
+    },
+    {
+      "feature": "log_quantity",
+      "label": "Quantity (log kg)",
+      "importance": 0.0249
+    },
+    {
+      "feature": "organic_claimed",
+      "label": "Organic label claimed",
+      "importance": 0.0237
+    },
+    {
+      "feature": "stage_idx",
+      "label": "Supply-chain stage",
+      "importance": 0.0146
+    },
+    {
+      "feature": "moisture_pct",
+      "label": "Moisture %",
+      "importance": 0.0146
+    },
+    {
+      "feature": "transit_speed_kmph",
+      "label": "Implied transit speed (km/h)",
+      "importance": 0.0118
+    },
+    {
+      "feature": "seller_age_days",
+      "label": "Seller account age (days)",
+      "importance": 0.0111
+    },
+    {
+      "feature": "seller_tx_24h",
+      "label": "Seller transactions in last 24h",
+      "importance": 0.011
+    },
+    {
+      "feature": "payment_cash",
+      "label": "Cash payment",
+      "importance": 0.0076
+    },
+    {
+      "feature": "crop_idx",
+      "label": "Crop type",
+      "importance": 0.0057
+    },
+    {
+      "feature": "grade_idx",
+      "label": "Quality grade",
+      "importance": 0.0034
+    },
+    {
+      "feature": "perishable",
+      "label": "Perishable crop",
+      "importance": 0.0029
+    },
+    {
+      "feature": "round_total",
+      "label": "Suspiciously round total",
+      "importance": 0.0
+    }
+  ]
+}

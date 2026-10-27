@@ -1,0 +1,11 @@
+backend/.venv/
+backend/.env
+backend/data/
+backend/artifacts/data/
+backend/*.egg-info/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo

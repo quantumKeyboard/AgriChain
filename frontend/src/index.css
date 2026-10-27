@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/* Design tokens — dark/gold style from docs/ui-references/reference-dark-gold.png.
+   Status colours validated (dataviz validator, dark surface #141414): all checks pass. */
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-bg: #0a0a0a;
+  --color-panel: #141414;
+  --color-panel-2: #1c1c1b;
+  --color-panel-3: #252524;
+  --color-line: #2a2a28;
+  --color-ink: #f2f1ec;
+  --color-ink-2: #c3c2b7;
+  --color-muted: #8a8983;
+  --color-gold: #e8c15a;
+  --color-gold-2: #f3d98a;
+  --color-gold-ink: #1a1404;
+
+  --color-clear: #27936a;
+  --color-flag: #c08716;
+  --color-quar: #c43b44;
+  --color-clear-ink: #6fd4a7;
+  --color-flag-ink: #f0c060;
+  --color-quar-ink: #ff8f95;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 85% -10%, rgba(232, 193, 90, 0.07), transparent 60%),
+    radial-gradient(900px 400px at -10% 110%, rgba(232, 193, 90, 0.04), transparent 60%), var(--color-bg);
+  min-height: 100vh;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: 28px;
+}
+
+.card-inner {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  border-radius: 20px;
+}
+
+.pill {
+  border-radius: 999px;
+}
+
+.btn-gold {
+  background: var(--color-gold);
+  color: var(--color-gold-ink);
+  font-weight: 600;
+  border-radius: 999px;
+  transition: filter 0.15s;
+}
+.btn-gold:hover {
+  filter: brightness(1.08);
+}
+.btn-gold:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  color: var(--color-ink);
+  border-radius: 999px;
+  transition: border-color 0.15s;
+}
+.btn-ghost:hover {
+  border-color: #4a4a46;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 6px;
+}
+
+@keyframes pulse-gold {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(232, 193, 90, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(232, 193, 90, 0);
+  }
+}
+.live-dot {
+  animation: pulse-gold 1.6s infinite;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.slide-in {
+  animation: slide-in 0.25s ease-out;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-slow {
+  animation: spin-slow 18s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .slide-in,
+  .spin-slow {
+    animation: none;
+  }
+}
+
+input,
+select,
+textarea {
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  color: var(--color-ink);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  width: 100%;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-gold);
+}
