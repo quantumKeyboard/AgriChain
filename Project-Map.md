@@ -11,13 +11,15 @@ run it, see `README.md`. For agent/coding rules, see `CLAUDE.md`.
 ## 1. What the project does (one paragraph)
 
 Agricultural produce moves through a chain of hands: **Farmer → Cooperative → Processor → Distributor → Retailer**.
-Every hand-over is a *transaction*. AgriChain Sentinel scores each transaction for fraud **before** it is written to a
-blockchain-style ledger. A hybrid engine (Random Forest + Isolation Forest + 7 business rules) produces a 0–1 risk
-score and an explanation. Low-risk transactions are sealed into blocks. Medium-risk ones are sealed *with a flag*.
-High-risk ones are **quarantined** until a human auditor approves or rejects them, and that verdict is then sealed on the
-chain too. A verifier recomputes every hash, so any later edit to a transaction, a verdict or a block is detected and
-located. Every transaction is **signed by its seller (Ed25519)**, so forged invoices are caught on arrival and even a
-fully re-mined, rewritten history is exposed. Auditor verdicts feed a **learning loop** that retrains the model in place.
+Every hand-over is a *transaction*. AgriChain Sentinel scores each transaction for fraud and records it, with its
+verdict, in an **Ethereum smart contract** (`AgriChainLedger.sol`, Solidity, running on a local Hardhat node). A hybrid
+engine (Random Forest + Isolation Forest + 7 business rules) produces a 0–1 risk score and an explanation. Each seller
+signs its invoice with its own Ethereum key (**EIP-712**); the ML oracle account submits it to the contract, which
+verifies that signature, stores the keccak256 hash of the invoice plus the risk, fraud type and status, and never lets
+a record be overwritten. Low-risk transactions are recorded as *Committed*, medium-risk ones as *Flagged*, high-risk
+ones as *PendingReview* until the auditor account resolves them on-chain (exactly once). The full invoice data lives in
+SQLite; **Verify** re-reads every record from the contract and pinpoints any database edit. Forged invoices never reach
+the chain — the contract would revert them. Auditor verdicts feed a **learning loop** that retrains the model in place.
 A React dashboard visualises all of it, and a built-in simulator streams realistic traffic and can inject six kinds of
 agricultural fraud plus identity spoofing on demand.
 
@@ -40,9 +42,19 @@ agricultural fraud plus identity spoofing on demand.
 | joblib | 1.6 | Saving/loading the model bundle (`model.joblib`) |
 | networkx | 3.7 | Cycle detection in the trade graph (circular trading) |
 | python-dotenv | 1.2 | Loading `backend/.env` |
-| cryptography | 50.0 | Ed25519 key pairs and transaction signatures (`app/chain/identity.py`) |
-| hashlib (stdlib) | — | SHA-256 for transaction hashes, Merkle tree, proof-of-work |
+| web3.py (+ eth-account, eth-abi) | 8.0 / 0.14 | JSON-RPC client for the Ethereum node: deploy, signed raw transactions, calls, event logs; EIP-712 signing and recovery (`app/chain/`) |
+| eth-tester + py-evm (dev only) | 0.14 / 0.12 | In-process EVM so backend tests run the real contract bytecode without a node |
 | pytest / httpx / ruff | 9.1 / — / 0.17 | Tests, FastAPI TestClient, lint + format |
+
+### Blockchain — `blockchain/` (Node.js)
+
+| Tool | Version | Used for |
+|---|---|---|
+| Solidity | 0.8.28 (optimizer 200 runs, EVM `cancun`) | `contracts/AgriChainLedger.sol` |
+| Hardhat | 2.29 | Local Ethereum node (`npm run node`, chain id 31337, JSON-RPC on :8545, automine), compile, contract tests, deploy script |
+| solc (npm, soljson) | 0.8.28 | Compiler used by Hardhat — bundled, so compiling works offline / on networks that block binaries.soliditylang.org |
+| OpenZeppelin Contracts | 5.4 | `AccessControl` (roles), `EIP712` (typed-data domain), `ECDSA` (signature recovery) |
+| ethers + hardhat-chai-matchers | 6.17 / 2.1 | Contract tests (`test/AgriChainLedger.test.js`) |
 
 ### Frontend — Node.js 20+
 
@@ -58,13 +70,13 @@ agricultural fraud plus identity spoofing on demand.
 | lucide-react | 1.62 | Icons |
 | Vitest + Testing Library + jsdom | 5.0 / 16.3 / 29.1 | Component and unit tests |
 | Prettier | 3.9 | Formatting (`npm run lint`) |
-| Web Crypto API (browser) | — | Re-computes the Merkle tree client-side on the Ledger page |
 | Google Fonts | — | Manrope (UI), JetBrains Mono (hashes/IDs) |
 
 ### Not used, on purpose
 
-No external blockchain node, no wallets/gas, no message queue, no WebSockets (the UI refetches after each action), no
-user accounts, no deep learning, no LLM calls, no pretrained Hugging Face model. Reasons are in `DESIGN.md` §3.
+No public-network deployment (the contract runs on a local node; Sepolia is optional), no browser wallet / MetaMask,
+no message queue, no WebSockets (the UI refetches after each action), no user accounts, no deep learning, no LLM
+calls, no pretrained Hugging Face model. Reasons are in `DESIGN.md` §3.
 
 ---
 
@@ -87,18 +99,21 @@ user accounts, no deep learning, no LLM calls, no pretrained Hugging Face model.
 │      │   ml/explain.py       SHAP top-6 contributions                               │
 │      ▼                                                                              │
 │  risk = 0.60·P(fraud) + 0.25·rule_score + 0.15·anomaly_score                        │
-│      ├─ risk < 0.40  → CLEAR        → mempool (status COMMITTED)                    │
-│      ├─ 0.40–0.70    → FLAGGED      → mempool (status FLAGGED)                      │
-│      └─ ≥ 0.70       → QUARANTINED  → waits for auditor → APPROVED / REJECTED       │
+│      ├─ risk < 0.40  → CLEAR        → on-chain status Committed                     │
+│      ├─ 0.40–0.70    → FLAGGED      → on-chain status Flagged                       │
+│      └─ ≥ 0.70       → QUARANTINED  → PendingReview → auditor resolve() →           │
+│                                       Approved / Rejected                           │
 │                                                                                     │
-│  chain/ledger.py: mempool ≥ 5 entries → block: Merkle root → PoW (3 hex zeros)      │
-│                   verify_chain(): recompute tx hashes, Merkle roots, header hashes, │
-│                   PoW and prev-hash links; report first broken block + reason       │
-│                                                                                     │
-│  sim/generator.py: participants, batches, transactions, 6 fraud injectors           │
-└──────────────────────────────────────┬─────────────────────────────────────────────┘
-                                       ▼
-                        SQLite  backend/data/app.db  (7 tables)
+│  chain/identity.py  participant Ethereum accounts, EIP-712 invoice sign / recover    │
+│  chain/ethereum.py  web3 client: deploy, recordTransaction(s), resolve, reads,       │
+│                     custom-error decoding, explorer helpers                         │
+│  routers/chain.py   /verify re-reads every record from the contract vs. SQLite       │
+│  sim/generator.py   participants, batches, transactions, 6 fraud injectors          │
+└───────────────┬───────────────────────────────────────────────┬────────────────────┘
+                ▼                                               ▼ JSON-RPC (:8545)
+   SQLite backend/data/app.db (7 tables)        Ethereum node — Hardhat, chain id 31337
+   full invoice data, explanations,             AgriChainLedger.sol (write-once records,
+   off-chain mirror of on-chain status          roles, EIP-712 signature check, events)
 ```
 
 **Offline pipeline (training):**
@@ -107,25 +122,43 @@ user accounts, no deep learning, no LLM calls, no pretrained Hugging Face model.
 
 ---
 
-## 4. The blockchain ledger (`backend/app/chain/ledger.py`)
+## 4. The blockchain layer (`blockchain/` + `backend/app/chain/`)
+
+### 4.1 The smart contract — `blockchain/contracts/AgriChainLedger.sol`
 
 | Concept | Implementation |
 |---|---|
-| Seller signature | Each participant has an **Ed25519** key pair; the public key is stored on `participant.public_key`. The seller signs the canonical JSON of the 21 immutable fields; the hex signature is stored on `transaction.signature`. *Demo custody:* private keys are derived on the server from `KEY_SEED` + participant id so the simulator can sign for everyone; in production each party would hold its own key. |
-| Transaction hash | `SHA-256(canonical JSON)` of the 21 immutable transaction fields **+ the seller's signature + its final ledger status** (`COMMITTED` / `FLAGGED` / `APPROVED` / `REJECTED`). Canonical = sorted keys, no whitespace, datetimes to seconds, floats rounded to 4 dp. Including the status means flipping a verdict breaks the hash. |
-| Merkle root | Pairwise `SHA-256(left + right)` up the tree; an odd last node is duplicated. Empty block → `SHA-256("")`. `merkle_proof()` returns the sibling path for any leaf. |
-| Block header hash | `SHA-256("index|timestamp|prev_hash|merkle_root|nonce|difficulty")` |
-| Consensus | Proof-of-work: increment `nonce` until the hash starts with `POW_DIFFICULTY` hex zeros (default 3, about 4,096 tries on average, milliseconds). |
-| Genesis | Block 0, `prev_hash = 64 × "0"`, no transactions. |
-| Block size | `BLOCK_SIZE = 5` records. Auditor verdicts and `POST /api/chain/seal` force-seal a partial block so the result is visible immediately. |
-| Mempool | `LedgerEntry` rows with `block_index = NULL`. |
-| Verification | For every block, in order: recompute each tx hash from today's DB rows → Merkle root → header hash → PoW target → previous-hash link → **every seller signature** against the registered public key. Returns `valid`, `first_broken_index`, a reason, and the tampered tx IDs. Rejected forgeries are sealed as evidence; their (invalid) signature is expected and accepted only for records sealed as `REJECTED` with type `forged_signature`. |
-| Forgery gate | At ingest, an invoice whose signature doesn't verify against the seller's key gets rule `SIGNATURE_INVALID` (severity 1.0) and is **hard-quarantined** (risk ≥ 0.99, type "Forged signature"), regardless of the ML score. |
-| Tamper demo (`DEMO_MODE` only) | `POST /api/dev/tamper` with mode `quantity` (×10 a sealed quantity), `verdict` (flip a sealed REJECTED to COMMITTED), `header` (edit a nonce) or **`rewrite`** (edit a quantity, then recompute every record hash and Merkle root and re-mine that block and all later ones — every hash and link is valid again, and only the signature check catches it). `POST /api/dev/reset` re-seeds. |
-| Merkle proofs | `GET /chain/blocks/{i}` returns each record's sibling path; the Ledger page rebuilds the tree in the browser (Web Crypto) and highlights the inclusion proof for any record. |
+| Roles (OpenZeppelin `AccessControl`) | `DEFAULT_ADMIN_ROLE` + `REGISTRAR_ROLE` → admin (deploys, registers participants) · `ORACLE_ROLE` → the ML engine (records transactions) · `AUDITOR_ROLE` → the auditor (resolves reviews). Any other caller reverts with `AccessControlUnauthorizedAccount(account, neededRole)`. |
+| Participants | `registerParticipants(address[], bytes32[] ids, Role[])` — Farmer, Cooperative, Processor, Distributor, Retailer. Unknown seller/buyer → `UnknownParticipant`. |
+| Invoice (EIP-712) | `Invoice(bytes32 txId, bytes32 batchId, address seller, address buyer, bytes32 dataHash)` in domain `AgriChainLedger` v1, chainId, contract address. `dataHash` = keccak256 of the canonical JSON of the 21 invoice fields (`SIGNED_FIELDS`). |
+| Recording | `recordTransaction(invoice, sellerSignature, Assessment{riskBps, decision, fraudType, modelVersion})` (oracle only); `recordTransactions(...)` for bulk import (seeding records 25 per Ethereum transaction). The contract recovers the signer with `ECDSA.tryRecover` → `InvalidSellerSignature(expectedSeller, recoveredSigner)` unless it is the seller. |
+| Statuses | Decision → status: Clear → `Committed`, Flagged → `Flagged`, Quarantined → `PendingReview`; then `Approved` / `Rejected`. |
+| Write-once | An existing txId → `RecordExists`. There is no update or delete function. |
+| Verdicts | `resolve(txId, approve, noteHash)` (auditor only), once, only from `PendingReview` → otherwise `NotPendingReview(txId, status)` / `RecordNotFound`. Stores auditor address + keccak256 of the note. |
+| Stored per record | batchId, seller, buyer, dataHash, riskBps (0–10000), fraudType (0 none, 1–6 = `FRAUD_TYPES` order), status, modelVersion, recordedAt, recordedBlock, auditor, verdictNoteHash |
+| Events | `ParticipantRegistered`, `TransactionRecorded(txId, batchId, seller, buyer, dataHash, riskBps, status, fraudType)`, `VerdictRecorded(txId, status, auditor, noteHash)` |
+| Views | `getRecord`, `getRecords(bytes32[])`, `recordCount`, `recordIdAt`, `batchTrail(batchId)` (provenance order), `verifyRecord(txId, dataHash)`, `invoiceDigest(invoice)` |
+| Tests | `blockchain/test/AgriChainLedger.test.js` — 10 tests (Hardhat + ethers + chai matchers) |
+| ABI | `npm run compile` writes `blockchain/deployments/AgriChainLedger.json` (ABI + bytecode, committed); the backend deploys from it, so Python needs no Node toolchain at runtime. |
 
-Scope note: this is a **single-node** chain. It is tamper-evident (hashing, Merkle trees, PoW, signatures, verification),
-but there is no peer-to-peer network or multi-party consensus.
+### 4.2 The backend side
+
+| Piece | Implementation |
+|---|---|
+| Node | `CHAIN_RPC_URL` (default `http://127.0.0.1:8545`, the Hardhat node started by the launcher with `npm run node`). |
+| Accounts | Admin / oracle / auditor keys from env (`ADMIN_PRIVATE_KEY`, `ORACLE_PRIVATE_KEY`, `AUDITOR_PRIVATE_KEY`); defaults are Hardhat's public dev accounts #0–#2 (local only). Transactions are built, signed locally and sent raw, so the same code works on a testnet. |
+| Participant keys | `identity.account(id)` = key derived from `KEY_SEED` + participant id (*demo custody*, so the simulator can sign for everyone; in production each participant signs in its own wallet). |
+| Deploy + seed | On startup the API attaches to the contract stored in `appmeta` (`contract_address`, `deploy_block`, `chain_id`). If it is missing (fresh DB, or the Hardhat node was restarted and its state is gone) it deploys a new contract, registers the 42 participants and records the demo history. A middleware re-checks this per request, so restarting the node while the API runs recovers automatically. |
+| Ingest | `services.ingest` → assess → `chain.record(...)` (oracle) → store the DB rows + `LedgerEntry` (status, record tx hash, block). An invalid seller signature is never sent; the transaction is hard-quarantined off-chain (rule `SIGNATURE_INVALID`). Approving such a forgery tries the contract and fails with `InvalidSellerSignature` (HTTP 409). |
+| Verdicts | `services.review` → `chain.resolve(...)` (auditor) → `LedgerEntry` status + verdict tx hash/block. |
+| Verify | `GET /api/chain/verify` reads every `TransactionRecorded` log and record from the contract and compares with SQLite: `DATA_MISMATCH` (invoice edited → hash differs), `BAD_SIGNATURE`, `STATUS_MISMATCH` (verdict edited), `MISSING_OFF_CHAIN` (row deleted), `NOT_ON_CHAIN` (fake mirror row). |
+| Explorer | `GET /api/chain/info`, `/chain/blocks`, `/chain/blocks/{n}` read blocks and receipts from the node and decode calls/events with the ABI. |
+| Errors | Reverts are decoded into the contract's custom errors (`ChainRevert` → HTTP 409); node down → HTTP 503 with a hint. |
+| Attack demo (`DEMO_MODE` only) | `POST /api/dev/attack {kind}`: `db_quantity`, `db_verdict` (edit SQLite → Verify detects) and `chain_overwrite` → `RecordExists`, `chain_unauthorized` (a seller resolves its own rejected invoice) → `AccessControlUnauthorizedAccount`, `chain_reverdict` → `NotPendingReview`, `chain_forged` → `InvalidSellerSignature`. On-chain attacks are really sent and mined with status 0. `POST /api/dev/reset` deploys a fresh contract and re-seeds. |
+
+Scope note: one local node with one validator (Hardhat automine: one block per transaction, free test ETH). The
+contract and backend are network-agnostic: `npm run deploy` with `SEPOLIA_RPC_URL` + `DEPLOYER_PRIVATE_KEY`, then point
+`CHAIN_RPC_URL` and the three keys at it.
 
 ---
 
@@ -217,21 +250,21 @@ Retraining takes ~6–10 s. With ~20 labels next to 15,000 synthetic rows the me
 
 ---
 
-## 6. Database (SQLite, `backend/app/models.py`, 8 tables)
+## 6. Database (SQLite, `backend/app/models.py`, 7 tables — the off-chain side)
 
 | Table | Key columns |
 |---|---|
-| `participant` | id (`F-001`…), name, role, region, registered_on, land_acres, capacity_tons, public_key (Ed25519, hex) |
+| `participant` | id (`F-001`…), name, role, region, registered_on, land_acres, capacity_tons, address (Ethereum, registered in the contract) |
 | `batch` | id (`B-XXXXXXXX`), crop, origin_farmer_id, harvest_date, organic_claimed, organic_cert_valid, region |
-| `transaction` | id (`TX-XXXXXXXX`), batch_id, crop, stage, seller_id, buyer_id, timestamp, quantity_kg, unit_price, total_value, ref_price, quality_grade, moisture_pct, organic flags, transit_km/hours, temp_avg/max_c, cold_chain_ok_claimed, payment_mode, signature (seller's Ed25519, hex), sim_label (ground truth, never used for scoring) |
+| `transaction` | id (`TX-XXXXXXXX`), batch_id, crop, stage, seller_id, buyer_id, timestamp, quantity_kg, unit_price, total_value, ref_price, quality_grade, moisture_pct, organic flags, transit_km/hours, temp_avg/max_c, cold_chain_ok_claimed, payment_mode, signature (seller's EIP-712 signature, 0x-hex), sim_label (ground truth, never used for scoring) |
 | `assessment` | tx_id, risk, p_fraud, rule_score, anomaly_score, pred_type, decision, rule_hits (JSON), type_probs (JSON), shap_top (JSON), features (JSON), model_version |
 | `review` | tx_id, action (APPROVED/REJECTED), note, reviewed_at |
-| `block` | index, timestamp, prev_hash, merkle_root, nonce, difficulty, hash, tx_count |
-| `ledgerentry` | tx_id, status, block_index (NULL = mempool), position, tx_hash, queued_at |
-| `appmeta` | key/value — `schema_version` ("2"). An older local DB is detected at startup and re-seeded instead of crashing. |
+| `ledgerentry` | Off-chain mirror of the on-chain record: tx_id, status, record_tx_hash, record_block, verdict_tx_hash, verdict_block |
+| `appmeta` | key/value — `schema_version` ("3"), `contract_address`, `deploy_tx`, `deploy_block`, `chain_id`. An older local DB is detected at startup and re-seeded instead of crashing. |
 
-On first start with an empty DB, the API seeds 300 transactions over the last ~45 hours (8 % fraud) and ~60 mined
-blocks, including 2 identity-spoofing attempts. All but 4 quarantined items are already reviewed, so the queue has
+On first start (or when the contract is gone), the API deploys the contract and seeds 300 transactions over the last
+~45 hours (8 % fraud): 298 recorded on-chain in 12 bulk transactions, plus 2 identity-spoofing attempts kept off-chain;
+reviewed verdicts are sent with `resolve()` (~35 Ethereum blocks, ~7 s on a Hardhat node). All but 4 quarantined items are already reviewed, so the queue has
 something to show and the learning loop has labels to use.
 
 ---
@@ -242,14 +275,15 @@ something to show and the learning loop has labels to use.
 |---|---|
 | `GET /health` | Status, model version, thresholds, demo mode |
 | `POST /transactions/score` | Dry run: score without saving (`forge_signature: true` signs as someone else) |
-| `POST /transactions` | Score + route (mempool or quarantine) + seal if the block is full |
+| `POST /transactions` | Score + record on-chain (`on_chain: {tx_hash, block, gas_used}`; `null` for a forged signature) |
 | `GET /transactions` | List; filters `decision`, `pred_type`, `batch_id`, `ledger_status`, `limit` |
-| `GET /transactions/{id}` | Full detail incl. SHAP, rules, ledger status, block |
+| `GET /transactions/{id}` | Full detail incl. SHAP, rules, ledger status, Ethereum block + tx hash, dataHash, signature check |
 | `GET /quarantine` | Open items (with explanations) + recently reviewed |
-| `POST /quarantine/{id}/decision` | `{action: approve\|reject, note}`; seals the verdict |
-| `GET /chain/blocks`, `GET /chain/blocks/{i}` | Blocks; block detail with stored vs recomputed hashes and Merkle proofs |
-| `POST /chain/seal` | Seal the mempool now |
-| `GET /chain/verify` | Full chain verification |
+| `POST /quarantine/{id}/decision` | `{action: approve\|reject, note}`; sends `resolve()` on-chain |
+| `GET /chain/info` | Network, chain id, node client, contract address, deploy tx, record count, role accounts + balances |
+| `GET /chain/blocks`, `GET /chain/blocks/{n}` | Ethereum blocks from the node; detail with roots, gas, decoded calls/events, and the supply-chain records touched |
+| `GET /chain/records/{tx_id}` | The contract's record next to the off-chain hash |
+| `GET /chain/verify` | Every on-chain record vs. the database (see §4.2) |
 | `GET /batches`, `GET /batches/{id}/trail` | Batch list (`flagged_only`); farm-to-retail hop list |
 | `GET /stats/summary`, `/stats/timeseries`, `/stats/fraud-by-type`, `/stats/risk-heatmap`, `/stats/stages` | Dashboard data |
 | `GET /participants`, `GET /participants/{id}` | Trust scores and radar dimensions |
@@ -258,11 +292,11 @@ something to show and the learning loop has labels to use.
 | `GET /model/feedback` | Auditor verdicts available as training labels |
 | `POST /model/retrain` | Learning loop: retrain with feedback, hot-swap the model, return before/after metrics |
 | `GET /model/history` | All model versions with their metrics |
-| `GET /export/transactions.csv`, `/export/audit.csv`, `/export/chain.csv` | CSV downloads (UTF-8 with BOM for Excel) |
+| `GET /export/transactions.csv`, `/export/audit.csv`, `/export/chain.csv` | CSV downloads (UTF-8 with BOM for Excel); `chain.csv` = every on-chain record, read live from the contract |
 | `POST /sim/step` | `{n, inject?}`: generate and process live transactions; `inject` = any of the 6 fraud types or `forged_signature` |
 | `GET /sim/example?type=` | A realistic example for the Check form (generated on a copy; live state untouched) |
 | `GET /sim/meta` | Crops, stages, regions, fraud types, participants |
-| `POST /dev/tamper`, `POST /dev/reset` | Demo only (`DEMO_MODE=true`) |
+| `POST /dev/attack`, `POST /dev/reset` | Demo only (`DEMO_MODE=true`) |
 
 ---
 
@@ -270,16 +304,16 @@ something to show and the learning loop has labels to use.
 
 | Route | Page | What it shows |
 |---|---|---|
-| `/` | Dashboard | Value screened (₹ Cr), decision mix, 4 KPI tiles (incl. caught/injected ground truth), transactions-over-time stacked area (2 h / 48 h), live risk stream with threshold lines, fraud-by-type bars, region × crop risk heatmap, ledger mini-chain + Verify, transaction history, stage breakdown, **Export CSV** |
+| `/` | Dashboard | Value screened (₹ Cr), decision mix, 4 KPI tiles (incl. caught/injected ground truth), transactions-over-time stacked area (2 h / 48 h), live risk stream with threshold lines, fraud-by-type bars, region × crop risk heatmap, latest Ethereum blocks + Verify, transaction history, stage breakdown, **Export CSV** |
 | `/check` | Check a transaction | Example loaders for legit + 6 fraud types + forged signature, editable form (incl. "Forge signature"), risk "sun" gauge, rule reasons, SHAP bars, score breakdown, Submit to pipeline |
-| `/quarantine` | Quarantine | Open queue sorted by risk, full explanation incl. signature status, type probabilities, Approve/Reject with note (saved as a training label), reviewed history with block links, **Export audit trail (CSV)** |
-| `/ledger` | Ledger | Scrollable block chain (per-record status bars), Verify banner, attack simulation (**4** tamper modes incl. "rewrite history and re-mine" + reset), block detail with stored vs recomputed hashes, per-record signature check, in-browser Merkle tree with **click-to-prove inclusion proofs**, CSV export |
+| `/quarantine` | Quarantine | Open queue sorted by risk, full explanation incl. signature status, type probabilities, Approve/Reject with note (an on-chain `resolve()`; also saved as a training label), reviewed history with links to the verdict's Ethereum block, **Export audit trail (CSV)** |
+| `/ledger` | Ledger | Contract card (address, chain id, client, height, records, role accounts + ETH), **Verify against chain** banner listing each mismatch, Ethereum block strip (red = reverted tx), block detail (hash, parent, state/tx/receipt roots, gas), decoded contract calls + events, records touched, attack simulation (2 off-chain + 4 on-chain attacks with the decoded revert reason) + reset (redeploy), CSV export |
 | `/trace` | Batch trace | Batch list (flagged / all), journey graphic Farmer→Retailer with ↺ for loops, timeline of hops with reasons, quantity-per-hop bars |
 | `/network` | Trade network | Layered flow graph (5 role columns; backward red arcs = circular trades), trust colouring, detected cycles, participant trust radar + list |
 | `/model` | Model insights | Headline metrics (held-out vs shifted), **learning loop** (labels available, Retrain, before/after table, version trend), ablation, threshold explorer (precision/recall + score histograms), ROC/PR, per-type recall, confusion matrix, feature importance, dataset + caveat |
 
 Shared pieces: `Layout` (pill navigation, simulator toggle, speed, Inject fraud menu, quarantine bell, toasts),
-`TxDrawer` (slide-over detail incl. signature status), `LearningLoop`, `RiskSun` (sunburst gauge), `Explain` (rules, SHAP, breakdown), `charts`
+`TxDrawer` (slide-over detail incl. Ethereum block/tx, dataHash and signature status), `LearningLoop`, `RiskSun` (sunburst gauge), `Explain` (rules, SHAP, breakdown), `charts`
 (tooltip, legend, heatmap), `state/AppState` (simulator loop + toasts).
 
 **Visual design:** matches `docs/ui-references/reference-dark-gold.png`, with near-black surfaces, 28 px rounded cards,
@@ -293,7 +327,7 @@ colour-blind separation on the dark surface. Every badge pairs colour with an ic
 ```
 agrichain/
 ├── run.bat                  Windows launcher (menu: start, setup, stop, reset, retrain, tests)
-├── run.sh                   macOS/Linux launcher (same menu; API/UI in background, logs in .run/)
+├── run.sh                   macOS/Linux launcher (same menu; node/API/UI in background, logs in .run/)
 ├── run.command              macOS: double-click in Finder → runs run.sh
 ├── README.md                How to run + demo script + viva FAQ
 ├── Project-Map.md           This file
@@ -301,29 +335,35 @@ agrichain/
 ├── CLAUDE.md                Rules for AI coding agents
 ├── docs/
 │   ├── ui-references/       UI style reference image
-│   └── screenshots/         Dashboard, Check, Ledger-tamper screenshots
+│   └── screenshots/         Dashboard, Check, Ledger (on-chain attack, database tamper), Model
+├── blockchain/              Hardhat project
+│   ├── contracts/AgriChainLedger.sol   The smart contract
+│   ├── test/AgriChainLedger.test.js    10 contract tests
+│   ├── scripts/             export-abi.js (ABI → deployments/), deploy.js (manual / Sepolia deploy)
+│   ├── deployments/         AgriChainLedger.json (ABI + bytecode, committed; used by the backend)
+│   └── hardhat.config.js    Solidity 0.8.28 via bundled solc; networks: hardhat, localhost, optional sepolia
 ├── backend/
 │   ├── requirements.txt     Runtime deps (pip install -r)
-│   ├── requirements-dev.txt + pytest, httpx, ruff
+│   ├── requirements-dev.txt + pytest, httpx, ruff, eth-tester[py-evm]
 │   ├── pyproject.toml       Package metadata, ruff + pytest config
-│   ├── .env.example         DEMO_MODE, POW_DIFFICULTY, BLOCK_SIZE, thresholds, CORS
+│   ├── .env.example         DEMO_MODE, thresholds, CORS, CHAIN_RPC_URL, optional account keys
 │   ├── app/
-│   │   ├── main.py          FastAPI app, CORS, routers, startup seeding
+│   │   ├── main.py          FastAPI app, CORS, routers, startup: connect node → attach or deploy + seed
 │   │   ├── config.py        Settings from env (paths are Windows-safe)
 │   │   ├── db.py            Engine (SQLite WAL), init/reset
 │   │   ├── models.py        7 SQLModel tables
 │   │   ├── schemas.py       Request bodies
-│   │   ├── services.py      assess → ingest → review pipeline
+│   │   ├── services.py      assess → ingest (record on-chain) → review (resolve on-chain)
 │   │   ├── views.py         Response shaping
-│   │   ├── chain/ledger.py  Hashing, Merkle, PoW, seal, verify, re-mine (demo attack)
-│   │   ├── chain/identity.py Ed25519 keys, signing, verification
+│   │   ├── chain/ethereum.py web3 client for AgriChainLedger (deploy, record, resolve, reads, errors)
+│   │   ├── chain/identity.py participant accounts, keccak dataHash, EIP-712 sign / recover
 │   │   ├── ml/              features.py, rules.py, scorer.py, explain.py, dataset.py,
 │   │   │                    training.py (shared training pipeline), feedback.py (verdicts → labels)
 │   │   ├── sim/             generator.py (simulator), state.py (live sim + demo seeding)
 │   │   └── routers/         transactions, quarantine, chain, batches, stats, sim, model, network, export, dev
 │   ├── scripts/             generate_dataset.py, train_model.py, seed_demo.py
 │   ├── artifacts/           model.joblib (2.8 MB), metrics.json ← committed; history.json after a retrain
-│   └── tests/               test_ledger.py, test_ml.py, test_api.py, test_identity_and_loop.py (32 tests)
+│   └── tests/               test_chain.py, test_ml.py, test_api.py, test_identity_and_loop.py (35 tests)
 └── frontend/
     ├── package.json, vite.config.ts, tsconfig.json, index.html
     └── src/
@@ -342,14 +382,14 @@ agrichain/
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `DEMO_MODE` | `true` | Enables `/api/dev/tamper` and `/api/dev/reset` |
+| `DEMO_MODE` | `true` | Enables `/api/dev/attack` and `/api/dev/reset` |
 | `DB_URL` | `sqlite:///<backend>/data/app.db` | Database location |
-| `POW_DIFFICULTY` | `3` | Leading hex zeros required in block hashes |
-| `BLOCK_SIZE` | `5` | Records per block |
 | `FLAG_THRESHOLD` | `0.40` | Risk at which a transaction is flagged |
 | `QUARANTINE_THRESHOLD` | `0.70` | Risk at which a transaction is held for review |
 | `CORS_ORIGINS` | `http://localhost:5173,…` | Allowed browser origins |
-| `KEY_SEED` | `agrichain-demo` | Seed for the deterministic demo signing keys (change it and re-seed for different keys) |
+| `KEY_SEED` | `agrichain-demo` | Seed for the participants' demo Ethereum keys (change it and re-seed for different keys) |
+| `CHAIN_RPC_URL` | `http://127.0.0.1:8545` | Ethereum JSON-RPC endpoint (the local Hardhat node) |
+| `ADMIN_PRIVATE_KEY` / `ORACLE_PRIVATE_KEY` / `AUDITOR_PRIVATE_KEY` | Hardhat dev accounts #0 / #1 / #2 | Accounts acting on the contract — set real, funded keys for a testnet; never use the defaults outside a local node |
 | `ARTIFACTS_DIR` | `backend/artifacts` | Where the model, metrics and version history live (tests point it at a temp copy) |
 
 ---
@@ -358,11 +398,12 @@ agrichain/
 
 | Area | What exists |
 |---|---|
-| Backend tests (32) | Merkle root/proof, PoW, tamper detection for data / verdict / header, **Ed25519 sign/verify, forged-signature hard gate, sealed rejected forgery stays valid, re-mined rewrite caught only by signatures**, CSV exports, **retrain hot-swaps the model and records history**, outdated-schema detection, every rule, honest-disclosure negative case, simulator determinism, injected-fraud detection, **feature parity DB vs in-memory**, API flows (dry run doesn't persist, 422 validation, quarantine → reject → sealed → 409 on re-review, blocks fill, every dashboard endpoint, batch trail, tamper → reset) |
+| Contract tests (10) | Records a seller-signed transaction; decision → status mapping; forged signer and altered data rejected (`InvalidSellerSignature`); no overwrite (`RecordExists`); only oracle records / only auditor resolves; exactly one verdict; resolve only from PendingReview; unregistered participants refused; batch recording keeps provenance order |
+| Backend tests (35) | Run the **real contract bytecode on an in-process EVM** (eth-tester): seeded history verifies; contract storage matches the DB; data edit → `DATA_MISMATCH` + `BAD_SIGNATURE`; verdict edit → `STATUS_MISMATCH`; deleted row → `MISSING_OFF_CHAIN`; the 4 on-chain attacks revert with the right custom error and are mined with status 0; explorer decodes calls; Python EIP-712 digest == the contract's `invoiceDigest`; participants registered on-chain; forged invoice stays off-chain and can't be approved; live traffic recorded on-chain; reset deploys a new contract; CSV exports; retrain hot-swap; schema upgrade; every rule; simulator determinism; feature parity; API flows |
 | Frontend tests (11) | Risk gauge labels and thresholds, status badge text, rule ordering, SHAP signs, signature status, ₹/kg/hash formatters, decision mapping |
 | Static checks | ruff (lint + format), TypeScript strict, Prettier |
-| End-to-end | The README demo script run in a headless browser: simulator + injection (incl. forged signature) → Quarantine reject → Ledger verify → rewrite-and-re-mine attack → verify fails on the signature → Merkle proof → reset → verify passes → Retrain → Check forged example. Zero console errors. |
-| Performance | ~50–75 ms per scored transaction incl. SHAP + signature check; seeding 300 tx + 60 blocks ≈ 3–5 s; full chain verify incl. ~300 signature checks ≪ 1 s; retrain ≈ 6–10 s |
+| End-to-end | Launcher start (Hardhat node + API + UI) → contract deployed and history recorded → Ledger: verify green → off-chain verdict flip detected → on-chain attacks reverted with their custom errors → node restart recovers automatically. Zero console errors. |
+| Performance | ~70–120 ms per transaction incl. SHAP, signature check and the on-chain `recordTransaction` (~250k gas); deploy + seed 300 tx ≈ 7 s; verify (300 records read from the contract + signature checks) ≈ 0.2 s; retrain ≈ 6–10 s |
 
 ---
 
@@ -370,14 +411,14 @@ agrichain/
 
 | Term | Meaning here |
 |---|---|
-| Mempool | Transactions accepted but not yet sealed into a block |
-| Seal / mine | Build a block from mempool entries and find a nonce meeting the PoW target |
-| Quarantine | Held off-chain because risk ≥ 0.70; needs an auditor decision |
-| Verdict | The auditor's APPROVED/REJECTED decision; part of the on-chain hash |
+| Smart contract | `AgriChainLedger.sol`: code deployed at an Ethereum address; its records can only change through its functions |
+| ML oracle | The backend account with `ORACLE_ROLE` that writes the model's assessment on-chain |
+| Quarantine | Recorded on-chain as `PendingReview` because risk ≥ 0.70; needs an auditor decision |
+| Verdict | The auditor's `resolve()` — APPROVED or REJECTED, once, from the auditor account |
+| dataHash | keccak256 of the full invoice (canonical JSON); stored on-chain, the data itself stays off-chain |
+| EIP-712 signature | The seller's signature over a typed `Invoice` struct; the contract recovers the signer and requires it to be the seller |
+| Revert | The EVM rejecting a transaction (custom error such as `RecordExists`); it is still mined, with status 0, and changes nothing |
 | Reference price | Simulated daily mandi price for a crop at a stage |
 | Shifted test set | Second test set where fraud is subtler and distributions wider — measures robustness |
 | Ground truth | `sim_label` — what the simulator actually injected (shown as "caught X / Y injected") |
-| Seller signature | Ed25519 signature by the seller over the transaction's canonical fields; proves who issued the invoice and that it wasn't changed |
-| Rewrite attack | Editing a sealed record and then recomputing every hash and re-mining the chain so hashes look valid — caught only by signatures |
-| Inclusion proof | The few sibling hashes needed to show one record is in a block's Merkle root, without the other records |
 | Learning loop | Auditor verdicts → training labels → retrain → hot-swapped model, tracked as model versions |

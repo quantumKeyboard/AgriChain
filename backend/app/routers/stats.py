@@ -2,10 +2,11 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
+from app.chain.ethereum import get_chain
 from app.db import get_session
-from app.models import Assessment, Block, LedgerEntry, Participant, Review, Transaction
+from app.models import Assessment, LedgerEntry, Participant, Review, Transaction
 from app.sim.generator import CROP_NAMES, FRAUD_LABELS, REGIONS
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
@@ -26,8 +27,8 @@ def summary(session: Session = Depends(get_session)) -> dict:
     rejected = [t for t, a in rows if reviews.get(t.id) == "REJECTED"]
     injected = [(t, a) for t, a in rows if t.sim_label and t.sim_label != "none"]
     legit = [(t, a) for t, a in rows if t.sim_label == "none"]
-    height = session.exec(select(Block.index).order_by(col(Block.index).desc())).first() or 0
-    pending = len(session.exec(select(LedgerEntry.tx_id).where(col(LedgerEntry.block_index).is_(None))).all())
+    on_chain = len(session.exec(select(LedgerEntry.tx_id)).all())
+    chain = get_chain()
     return {
         "transactions": len(rows),
         "clear": decisions["CLEAR"],
@@ -39,8 +40,9 @@ def summary(session: Session = Depends(get_session)) -> dict:
         "value_screened": round(sum(t.total_value for t, _ in rows), 2),
         "value_blocked": round(sum(t.total_value for t in rejected + open_q), 2),
         "avg_risk": round(sum(a.risk for _, a in rows) / max(len(rows), 1), 4),
-        "chain_height": height,
-        "pending_pool": pending,
+        "chain_height": chain.w3.eth.block_number if chain.connected() else None,
+        "on_chain_records": on_chain,
+        "off_chain_only": len(rows) - on_chain,
         # Ground truth only exists for simulator traffic.
         "ground_truth": {
             "injected": len(injected),

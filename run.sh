@@ -6,13 +6,15 @@
 #
 #  - Never upgrades pip.
 #  - Uses backend/.venv; if venv is unavailable it falls back to pip --user.
-#  - API and UI run in the background; logs go to .run/api.log and .run/ui.log.
+#  - The Ethereum node (Hardhat), API and UI run in the background;
+#    logs go to .run/chain.log, .run/api.log and .run/ui.log.
 #  Written for bash 3.2 (the version macOS ships).
 # =============================================================================
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACKEND="$ROOT/backend"
 FRONTEND="$ROOT/frontend"
+CHAIN_DIR="$ROOT/blockchain"
 VENV_PY="$BACKEND/.venv/bin/python"
 RUN_DIR="$ROOT/.run"
 API_URL="http://localhost:8000"
@@ -71,13 +73,13 @@ detect() {
     READY=1
     if [ -z "$PY" ]; then
         STATUS="${RED}Python missing${RST} - install it, then press 2"; READY=0
-    elif ! "$PY" -c "import fastapi, sklearn, shap, sqlmodel, uvicorn" >/dev/null 2>&1; then
+    elif ! "$PY" -c "import fastapi, sklearn, shap, sqlmodel, uvicorn, web3" >/dev/null 2>&1; then
         STATUS="${YEL}Not installed yet${RST} - press 2 for setup"; READY=0
     fi
 
     if command -v npm >/dev/null 2>&1; then
         NODE_LABEL="found ($(node -v 2>/dev/null))"
-        if [ ! -d "$FRONTEND/node_modules" ] && [ "$READY" = 1 ]; then
+        if { [ ! -d "$FRONTEND/node_modules" ] || [ ! -d "$CHAIN_DIR/node_modules" ]; } && [ "$READY" = 1 ]; then
             STATUS="${YEL}Not installed yet${RST} - press 2 for setup"; READY=0
         fi
     else
@@ -86,7 +88,8 @@ detect() {
     fi
 
     RUNNING=""
-    port_in_use 8000 && RUNNING="API"
+    port_in_use 8545 && RUNNING="Blockchain"
+    port_in_use 8000 && RUNNING="${RUNNING:+$RUNNING + }API"
     port_in_use 5173 && RUNNING="${RUNNING:+$RUNNING + }UI"
 }
 
@@ -134,7 +137,7 @@ setup() {
             echo "      (or with Homebrew: brew install python@3.12), then run this again."
             return 1
         fi
-        echo "  [1/4] Creating a virtual environment in backend/.venv ..."
+        echo "  [1/5] Creating a virtual environment in backend/.venv ..."
         rm -rf "$BACKEND/.venv"
         if "$BASE_PY" -m venv "$BACKEND/.venv" >/dev/null 2>&1 &&
             { "$VENV_PY" -m pip --version >/dev/null 2>&1 || "$VENV_PY" -m ensurepip --default-pip >/dev/null 2>&1; } &&
@@ -149,23 +152,25 @@ setup() {
     fi
 
     if [ "$PY" = "$VENV_PY" ]; then
-        echo "  [2/4] Installing Python packages into backend/.venv - a few minutes..."
+        echo "  [2/5] Installing Python packages into backend/.venv - a few minutes..."
         pip_install || { setup_pip_failed; return 1; }
     else
-        echo "  [2/4] Installing Python packages for your user - a few minutes..."
+        echo "  [2/5] Installing Python packages for your user - a few minutes..."
         pip_install --user || { echo "        Retrying without --user..."; pip_install; } || { setup_pip_failed; return 1; }
     fi
 
     [ -f "$BACKEND/.env" ] || cp "$BACKEND/.env.example" "$BACKEND/.env"
-    echo "  [3/4] Checking the ML model..."
+    echo "  [3/5] Checking the ML model..."
     ensure_model || return 1
 
-    echo "  [4/4] Installing frontend packages - first time only..."
+    echo "  [4/5] Installing frontend packages - first time only..."
     if ! command -v npm >/dev/null 2>&1; then
         err "Node.js was not found. Install the LTS from https://nodejs.org/ (or: brew install node)"
         return 1
     fi
     (cd "$FRONTEND" && npm install --no-audit --no-fund) || { err "npm install failed - see the messages above."; return 1; }
+    echo "  [5/5] Installing the blockchain toolkit (Hardhat, Solidity compiler) - first time only..."
+    (cd "$CHAIN_DIR" && npm install --no-audit --no-fund) || { err "npm install failed - see the messages above."; return 1; }
     echo
     ok "Setup complete. Press 1 in the menu to start the app."
 }
@@ -180,6 +185,27 @@ setup_pip_failed() {
 }
 
 # ----------------------------------------------------------------- run / stop
+launch_chain() {
+    if port_in_use 8545; then echo "  Ethereum node already running on port 8545."; return 0; fi
+    echo "  Starting the Ethereum node - Hardhat, chain id 31337 (log: .run/chain.log)..."
+    (
+        cd "$CHAIN_DIR" || exit 1
+        nohup npm run node >"$RUN_DIR/chain.log" 2>&1 </dev/null &
+        echo $! >"$RUN_DIR/chain.pid"
+    )
+}
+
+wait_for_chain() {
+    i=0
+    while [ $i -lt 40 ]; do
+        curl -sf -o /dev/null -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "http://127.0.0.1:8545" 2>/dev/null && return 0
+        sleep 1; i=$((i + 1))
+    done
+    warn "The Ethereum node did not start - check .run/chain.log (menu: L)."
+    return 1
+}
+
 launch_api() {
     if port_in_use 8000; then echo "  API already running on port 8000."; return 0; fi
     echo "  Starting API  (log: .run/api.log)..."
@@ -202,9 +228,9 @@ launch_ui() {
 }
 
 wait_for_api() {
-    echo "  Waiting for the API - first start seeds demo data, up to ~30 s..."
+    echo "  Waiting for the API - it deploys the smart contract and records the demo history, ~20 s..."
     i=0
-    while [ $i -lt 45 ]; do
+    while [ $i -lt 90 ]; do
         curl -sf -o /dev/null "$API_URL/api/health" 2>/dev/null && return 0
         sleep 1; i=$((i + 1))
     done
@@ -228,6 +254,8 @@ start_all() {
         detect
         [ "$READY" = 1 ] || return 1
     fi
+    launch_chain
+    wait_for_chain || return 1
     launch_api
     launch_ui
     wait_for_api
@@ -237,6 +265,7 @@ start_all() {
     echo
     ok "AgriChain Sentinel is running in the background."
     echo "       UI       : $UI_URL"
+    echo "       Ethereum : http://127.0.0.1:8545 (Hardhat node)"
     echo "       API docs : $API_URL/docs"
     echo "       Stop it with option 4 (it keeps running if you close this window)."
 }
@@ -252,7 +281,7 @@ kill_port() {
 
 stop_app() {
     echo; echo "  Stopping the app..."
-    for name in api ui; do
+    for name in api ui chain; do
         if [ -f "$RUN_DIR/$name.pid" ]; then
             pid="$(cat "$RUN_DIR/$name.pid")"
             pkill -P "$pid" 2>/dev/null
@@ -262,6 +291,7 @@ stop_app() {
     done
     kill_port 8000
     kill_port 5173
+    kill_port 8545
     sleep 1
     ok "Stopped."
 }
@@ -275,8 +305,8 @@ reset_demo() {
     if curl -sf -X POST -o /dev/null "$API_URL/api/dev/reset" 2>/dev/null; then
         ok "Demo data reset through the running API. Refresh the browser."
     else
-        echo "  API is not running - resetting the database directly..."
-        (cd "$BACKEND" && "$PY" scripts/seed_demo.py) && ok "Demo data reset."
+        echo "  API is not running - resetting directly (needs the Ethereum node)..."
+        launch_chain && wait_for_chain && (cd "$BACKEND" && "$PY" scripts/seed_demo.py) && ok "Demo data reset."
     fi
 }
 
@@ -293,10 +323,12 @@ run_tests() {
     (cd "$BACKEND" && "$PY" -m pytest -q)
     echo; echo "  ${BOLD}=== Frontend tests ===${RST}"
     (cd "$FRONTEND" && npm test)
+    echo; echo "  ${BOLD}=== Smart contract tests ===${RST}"
+    (cd "$CHAIN_DIR" && npm test)
 }
 
 show_logs() {
-    for name in api ui; do
+    for name in chain api ui; do
         echo; echo "  ${BOLD}=== .run/$name.log (last 25 lines) ===${RST}"
         if [ -f "$RUN_DIR/$name.log" ]; then tail -n 25 "$RUN_DIR/$name.log"; else echo "  (no log yet)"; fi
     done
@@ -315,12 +347,12 @@ menu() {
         echo "      Status  : $STATUS"
         [ -n "$RUNNING" ] && echo "      Running : ${GRN}$RUNNING${RST}  ($UI_URL)"
         echo "   ------------------------------------------------------"
-        echo "      [1]  Start the app        (API + UI, opens browser)"
+        echo "      [1]  Start the app        (blockchain + API + UI)"
         echo "      [2]  Setup / repair       (install everything)"
         echo "      [3]  Open app in browser"
         echo "      [4]  Stop the app"
         echo "   ------------------------------------------------------"
-        echo "      [5]  Start API only       $API_URL/docs"
+        echo "      [5]  Start blockchain + API  $API_URL/docs"
         echo "      [6]  Start UI only        $UI_URL"
         echo "      [7]  Reset demo data"
         echo "      [8]  Retrain the ML model"
@@ -336,7 +368,7 @@ menu() {
             2) clear; setup; pause ;;
             3) open_url "$UI_URL" ;;
             4) stop_app; pause ;;
-            5) need_setup && { launch_api; wait_for_api && open_url "$API_URL/docs"; }; pause ;;
+            5) need_setup && { launch_chain; wait_for_chain && launch_api && wait_for_api && open_url "$API_URL/docs"; }; pause ;;
             6) need_setup && { launch_ui; wait_for_ui; open_url "$UI_URL"; }; pause ;;
             7) reset_demo; pause ;;
             8) retrain; pause ;;

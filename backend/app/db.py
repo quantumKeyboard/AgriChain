@@ -21,7 +21,7 @@ def _sqlite_pragmas(dbapi_conn, _record) -> None:  # pragma: no cover - trivial
 
 
 # Bump when tables change shape; an older local database is then wiped and re-seeded.
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 def schema_is_current() -> bool:

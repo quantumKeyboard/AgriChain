@@ -465,6 +465,7 @@ class SupplyChainSimulator:
     def _duplicate(self) -> dict:
         src = self.rng.choice(self.recent[-60:])
         tx = dict(src)
+        tx.pop("signature", None)  # the seller signs the resubmitted invoice afresh
         tx["id"] = self._new_id("TX")
         tx["timestamp"] = self.clock
         tx["sim_label"] = "duplicate_invoice"

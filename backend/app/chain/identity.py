@@ -1,31 +1,27 @@
-"""Participant identities: Ed25519 key pairs and transaction signatures.
+"""Participant identities on Ethereum and EIP-712 invoice signatures.
 
-Every participant has an Ed25519 key pair. The seller signs the canonical JSON of the
-transaction's immutable fields (the same fields the ledger hashes, without the verdict).
-Anyone can verify the signature with the seller's public key, so:
+Every participant (farmer, cooperative, ...) has an Ethereum account. For each transaction the
+seller signs an EIP-712 `Invoice` — the same typed struct the AgriChainLedger contract verifies
+with `ECDSA.tryRecover` — binding the transaction id, batch, seller, buyer and a keccak256 hash
+of the full invoice data. The full data stays off-chain (SQLite); the hash goes on-chain.
 
-* an invoice "from" a seller but signed by someone else is caught at ingest (identity spoofing);
-* editing a sealed transaction breaks its signature even if an attacker recomputes every
-  hash and re-mines the chain, because they cannot sign as the seller.
-
-DEMO CUSTODY: private keys are derived deterministically on the server from KEY_SEED + id,
-so the simulator can sign on each participant's behalf. In a real deployment each
-participant would hold their own private key and only the public key would be registered.
+DEMO CUSTODY: participant keys are derived on the server from KEY_SEED + participant id so the
+simulator can sign on everyone's behalf. In a real deployment each participant keeps their own
+key (e.g. in a wallet) and the platform only ever sees signatures.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 from functools import lru_cache
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from eth_account import Account
+from eth_account.messages import encode_typed_data
+from eth_utils import keccak
 
 from app.config import settings
 
-# Fields covered by the seller's signature (shared with the ledger hash).
+# Fields covered by the data hash (the full invoice; stays off-chain).
 SIGNED_FIELDS = [
     "id",
     "batch_id",
@@ -50,6 +46,18 @@ SIGNED_FIELDS = [
     "payment_mode",
 ]
 
+INVOICE_TYPES = {
+    "Invoice": [
+        {"name": "txId", "type": "bytes32"},
+        {"name": "batchId", "type": "bytes32"},
+        {"name": "seller", "type": "address"},
+        {"name": "buyer", "type": "address"},
+        {"name": "dataHash", "type": "bytes32"},
+    ]
+}
+
+ROLE_CODES = {"FARMER": 1, "COOP": 2, "PROCESSOR": 3, "DISTRIBUTOR": 4, "RETAILER": 5}
+
 
 def canon(value):
     """Canonical form of one field value (stable across DB round-trips)."""
@@ -64,45 +72,73 @@ def _get(tx, field: str):
     return tx[field] if isinstance(tx, dict) else getattr(tx, field)
 
 
-def signing_payload(tx) -> bytes:
-    """Canonical bytes the seller signs. Accepts a dict or a Transaction row."""
+def data_payload(tx) -> bytes:
+    """Canonical JSON of the full invoice. Accepts a dict or a Transaction row."""
     payload = {f: canon(_get(tx, f)) for f in SIGNED_FIELDS}
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 
 
-@lru_cache(maxsize=512)
-def private_key(participant_id: str) -> Ed25519PrivateKey:
-    seed = hashlib.sha256(f"{settings.key_seed}:{participant_id}".encode()).digest()
-    return Ed25519PrivateKey.from_private_bytes(seed)
+def data_hash(tx) -> bytes:
+    """keccak256 of the full invoice data — what gets anchored on-chain."""
+    return keccak(data_payload(tx))
+
+
+def to_bytes32(text: str) -> bytes:
+    """Same encoding as ethers.encodeBytes32String: UTF-8, right-padded with zeros."""
+    raw = text.encode()
+    if len(raw) > 31:
+        raise ValueError(f"{text!r} is too long for bytes32")
+    return raw.ljust(32, b"\0")
+
+
+def from_bytes32(raw: bytes) -> str:
+    return bytes(raw).rstrip(b"\0").decode(errors="replace")
 
 
 @lru_cache(maxsize=512)
-def public_key_hex(participant_id: str) -> str:
-    raw = (
-        private_key(participant_id)
-        .public_key()
-        .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-    )
-    return raw.hex()
+def account(participant_id: str):
+    return Account.from_key(keccak(text=f"{settings.key_seed}:{participant_id}"))
 
 
-def sign(tx, signer_id: str) -> str:
-    """Sign as `signer_id` (normally the seller; another id simulates a forgery)."""
-    return private_key(signer_id).sign(signing_payload(tx)).hex()
+def address_of(participant_id: str) -> str:
+    return account(participant_id).address
 
 
-@lru_cache(maxsize=4096)
-def _verify(public_hex: str, signature_hex: str, payload: bytes) -> bool:
+def invoice_message(tx) -> dict:
+    return {
+        "txId": to_bytes32(_get(tx, "id")),
+        "batchId": to_bytes32(_get(tx, "batch_id")),
+        "seller": address_of(_get(tx, "seller_id")),
+        "buyer": address_of(_get(tx, "buyer_id")),
+        "dataHash": data_hash(tx),
+    }
+
+
+def sign_invoice(tx, signer_id: str, domain: dict) -> str:
+    """EIP-712 signature by `signer_id` (normally the seller; anyone else = a forgery)."""
+    signed = Account.sign_typed_data(account(signer_id).key, domain, INVOICE_TYPES, invoice_message(tx))
+    return "0x" + signed.signature.hex().removeprefix("0x")
+
+
+def recover_signer(tx, signature: str | None, domain: dict) -> str | None:
+    if not signature:
+        return None
+    m = invoice_message(tx)
+    key = (m["txId"], m["batchId"], m["seller"], m["buyer"], m["dataHash"], signature)
+    return _recover(key, tuple(sorted(domain.items())))
+
+
+@lru_cache(maxsize=8192)
+def _recover(key: tuple, domain: tuple) -> str | None:
+    tx_id, batch_id, seller, buyer, dhash, signature = key
+    msg = {"txId": tx_id, "batchId": batch_id, "seller": seller, "buyer": buyer, "dataHash": dhash}
     try:
-        Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex)).verify(
-            bytes.fromhex(signature_hex), payload
+        return Account.recover_message(
+            encode_typed_data(dict(domain), INVOICE_TYPES, msg), signature=signature
         )
-        return True
-    except (InvalidSignature, ValueError):
-        return False
+    except Exception:  # malformed signature
+        return None
 
 
-def verify(tx, signature_hex: str | None, public_hex: str | None) -> bool:
-    if not signature_hex or not public_hex:
-        return False
-    return _verify(public_hex, signature_hex, signing_payload(tx))
+def verify_invoice(tx, signature: str | None, domain: dict) -> bool:
+    return recover_signer(tx, signature, domain) == address_of(_get(tx, "seller_id"))

@@ -109,25 +109,40 @@ export function TxDetail({ tx, compact = false }: { tx: TxView; compact?: boolea
         <p className="flex items-center gap-2 font-semibold text-ink-2">
           <Link2 size={14} className="text-gold" /> On-chain record
         </p>
-        {tx.block_index !== null ? (
+        {tx.on_chain ? (
           <>
             <p className="text-muted">
-              Sealed in{" "}
+              Recorded by the ML oracle in Ethereum{" "}
               <Link
-                to={`/ledger?block=${tx.block_index}`}
+                to={`/ledger?block=${tx.block_number}`}
                 className="text-gold underline-offset-2 hover:underline"
               >
-                block #{tx.block_index}
+                block #{tx.block_number}
               </Link>{" "}
-              as <span className="text-ink-2">{tx.ledger_status}</span>
+              · status now <span className="text-ink-2">{tx.ledger_status}</span>
             </p>
-            <p className="break-all font-mono text-[11px] text-muted">{tx.tx_hash}</p>
+            <p className="break-all font-mono text-[10px] text-muted" title="Ethereum transaction hash">
+              tx {tx.eth_tx_hash}
+            </p>
+            {tx.verdict_block !== null && (
+              <p className="text-muted">
+                Auditor verdict sent on-chain in{" "}
+                <Link
+                  to={`/ledger?block=${tx.verdict_block}`}
+                  className="text-gold underline-offset-2 hover:underline"
+                >
+                  block #{tx.verdict_block}
+                </Link>
+              </p>
+            )}
+            <p className="break-all font-mono text-[10px] text-muted" title="keccak256 of the full invoice">
+              dataHash {tx.data_hash}
+            </p>
           </>
         ) : (
           <p className="text-muted">
-            {tx.ledger_status === "PENDING_REVIEW"
-              ? "Held in quarantine — not on chain until an auditor decides."
-              : "Waiting in the mempool for the next block."}
+            Not on the blockchain: the seller&apos;s signature is invalid, so the smart contract would reject
+            it. Kept off-chain as evidence.
           </p>
         )}
         <SignatureLine tx={tx} />
@@ -158,18 +173,18 @@ function Info({ k, v }: { k: string; v: string }) {
   );
 }
 
-/** Seller's Ed25519 signature status. */
+/** Seller's EIP-712 invoice signature status (the same check the smart contract performs). */
 export function SignatureLine({ tx }: { tx: TxView }) {
   return (
     <p className={`flex items-start gap-1.5 ${tx.signature_valid ? "text-clear-ink" : "text-quar-ink"}`}>
       <KeyRound size={13} className="mt-0.5 shrink-0" aria-hidden />
       <span>
         {tx.signature_valid
-          ? "Seller signature valid (Ed25519)"
-          : "Signature does NOT match the seller's registered key"}
+          ? "Seller's EIP-712 signature valid"
+          : "Signature does NOT come from the seller's Ethereum account"}
         <span className="block font-mono text-[10px] text-muted">
-          sig {tx.signature ? `${tx.signature.slice(0, 16)}…` : "—"} · key{" "}
-          {tx.seller_public_key ? `${tx.seller_public_key.slice(0, 12)}…` : "—"}
+          sig {tx.signature ? `${tx.signature.slice(0, 18)}…` : "—"} · seller{" "}
+          {tx.seller_address ? `${tx.seller_address.slice(0, 10)}…` : "—"}
         </span>
       </span>
     </p>

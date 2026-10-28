@@ -59,7 +59,7 @@ const STATUS_META: Record<string, { label: string; cls: string; Icon: typeof Che
   QUARANTINED: { label: "Quarantined", cls: "text-quar-ink border-quar/50 bg-quar/15", Icon: ShieldAlert },
   PENDING_REVIEW: { label: "Awaiting review", cls: "text-quar-ink border-quar/50 bg-quar/15", Icon: Clock },
   REJECTED: { label: "Rejected", cls: "text-quar-ink border-quar/50 bg-quar/15", Icon: ShieldX },
-  PENDING: { label: "In mempool", cls: "text-ink-2 border-line bg-panel-3", Icon: Clock },
+  PENDING: { label: "Off-chain", cls: "text-ink-2 border-line bg-panel-3", Icon: Clock },
 };
 
 export function StatusBadge({ status, small = false }: { status: string; small?: boolean }) {

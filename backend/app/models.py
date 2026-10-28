@@ -13,7 +13,7 @@ class Participant(SQLModel, table=True):
     registered_on: NaiveDatetime
     land_acres: float | None = None
     capacity_tons: float | None = None
-    public_key: str = ""  # Ed25519, hex
+    address: str = ""  # Ethereum address (registered in the AgriChainLedger contract)
 
 
 class Batch(SQLModel, table=True):
@@ -48,7 +48,7 @@ class Transaction(SQLModel, table=True):
     temp_max_c: float
     cold_chain_ok_claimed: bool
     payment_mode: str
-    signature: str = ""  # seller's Ed25519 signature over the canonical payload, hex
+    signature: str = ""  # seller's EIP-712 signature over the invoice (0x-hex)
     # Ground truth from the simulator (None for hand-entered tx). Never used for scoring.
     sim_label: str | None = None
 
@@ -83,23 +83,16 @@ class AppMeta(SQLModel, table=True):
     value: str
 
 
-class Block(SQLModel, table=True):
-    index: int = Field(primary_key=True)
-    timestamp: NaiveDatetime
-    prev_hash: str
-    merkle_root: str
-    nonce: int
-    difficulty: int
-    hash: str
-    tx_count: int = 0
-
-
 class LedgerEntry(SQLModel, table=True):
-    """A transaction's record on the chain. block_index is None while it waits in the pending pool."""
+    """Off-chain mirror of a transaction's record in the AgriChainLedger contract.
+
+    The chain is the source of truth; `GET /api/chain/verify` re-reads every record from the
+    contract and compares it with this mirror and with the transaction data.
+    """
 
     tx_id: str = Field(primary_key=True, foreign_key="transaction.id")
-    status: str  # COMMITTED / FLAGGED / APPROVED / REJECTED
-    block_index: int | None = Field(default=None, index=True)
-    position: int = 0
-    tx_hash: str = ""
-    queued_at: NaiveDatetime
+    status: str  # COMMITTED / FLAGGED / PENDING_REVIEW / APPROVED / REJECTED
+    record_tx_hash: str  # Ethereum transaction that recorded it
+    record_block: int = Field(index=True)
+    verdict_tx_hash: str | None = None  # Ethereum transaction of the auditor's verdict
+    verdict_block: int | None = None

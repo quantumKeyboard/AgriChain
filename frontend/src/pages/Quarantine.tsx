@@ -41,10 +41,10 @@ export default function Quarantine() {
     pushToast({
       tone: action === "reject" ? "danger" : "ok",
       title: `${current.id} ${res.status.toLowerCase()}`,
-      body: res.sealed_blocks.length
-        ? `Sealed into block #${res.sealed_blocks.at(-1)} · saved as a training label for the next retrain`
+      body: res.on_chain
+        ? `Verdict recorded on Ethereum in block #${res.on_chain.block} · saved as a training label for the next retrain`
         : "Verdict queued",
-      href: res.sealed_blocks.length ? `/ledger?block=${res.sealed_blocks.at(-1)}` : undefined,
+      href: res.on_chain ? `/ledger?block=${res.on_chain.block}` : undefined,
     });
     setSelected(null);
   };
@@ -173,7 +173,7 @@ export default function Quarantine() {
           </Card>
 
           <Card className="xl:col-span-12">
-            <CardTitle title="Recently reviewed" sub="Verdicts already sealed on-chain" />
+            <CardTitle title="Recently reviewed" sub="Verdicts already recorded on-chain" />
             {!data?.reviewed.length ? (
               <Empty title="No reviews yet" />
             ) : (
@@ -205,12 +205,17 @@ export default function Quarantine() {
                         </td>
                         <td className="max-w-xs truncate text-xs text-muted">{t.review?.note}</td>
                         <td>
-                          {t.block_index !== null ? (
-                            <Link to={`/ledger?block=${t.block_index}`} className="text-gold hover:underline">
-                              #{t.block_index}
+                          {t.verdict_block !== null ? (
+                            <Link
+                              to={`/ledger?block=${t.verdict_block}`}
+                              className="text-gold hover:underline"
+                            >
+                              #{t.verdict_block}
                             </Link>
                           ) : (
-                            <span className="text-muted">mempool</span>
+                            <span className="text-muted" title="Forged signature: the contract refuses it">
+                              off-chain
+                            </span>
                           )}
                         </td>
                       </tr>

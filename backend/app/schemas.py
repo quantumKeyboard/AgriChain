@@ -56,6 +56,12 @@ class SimStepIn(BaseModel):
     inject: FraudType | None = None
 
 
-class TamperIn(BaseModel):
-    block_index: int | None = None
-    mode: Literal["quantity", "verdict", "header", "rewrite"] = "quantity"
+class AttackIn(BaseModel):
+    kind: Literal[
+        "db_quantity",
+        "db_verdict",
+        "chain_overwrite",
+        "chain_unauthorized",
+        "chain_reverdict",
+        "chain_forged",
+    ]

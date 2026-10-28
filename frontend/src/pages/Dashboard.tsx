@@ -41,7 +41,7 @@ import {
   Segmented,
   StatusBadge,
 } from "../components/ui";
-import { CROP_EMOJI, STAGE_LABEL, inrCompact, kg, num, shortHash, timeAgo } from "../lib/format";
+import { CROP_EMOJI, STAGE_LABEL, inrCompact, kg, num, timeAgo } from "../lib/format";
 import { C, axisProps } from "../lib/tokens";
 import { useApp } from "../state/AppState";
 
@@ -53,7 +53,7 @@ export default function Dashboard() {
       <PageTitle
         title="Overview"
         sup={running ? "live" : undefined}
-        sub="Every agricultural supply-chain transaction is scored by the hybrid ML engine before it can be written to the ledger."
+        sub="Every agricultural supply-chain transaction is scored by the hybrid ML engine, then recorded with its verdict in an Ethereum smart contract."
         right={
           <div className="flex items-center gap-2">
             <a
@@ -124,7 +124,7 @@ function HeroRow() {
         </p>
         <p className="mt-2 text-xs text-muted">
           across <span className="text-ink-2">{num(data.transactions)}</span> transactions ·{" "}
-          <span className="text-ink-2">{data.chain_height}</span> blocks
+          <span className="text-ink-2">{num(data.on_chain_records)}</span> recorded on Ethereum
         </p>
         <div className="mt-6">
           <div className="mb-2 flex justify-between text-[11px] text-muted">
@@ -473,11 +473,7 @@ function ChainCard() {
     <Card>
       <CardTitle
         title="Ledger"
-        sub={
-          data
-            ? `Height #${data.height} · ${data.pending} tx in mempool · PoW difficulty ${data.difficulty}`
-            : undefined
-        }
+        sub={data ? `Ethereum block #${data.head} · AgriChainLedger smart contract` : undefined}
         right={
           <Link to="/ledger" className="btn-ghost px-3 py-1.5 text-xs">
             Explore
@@ -492,15 +488,15 @@ function ChainCard() {
             .slice(0, 5)
             .reverse()
             .map((b, i, arr) => (
-              <div key={b.index} className="flex items-center gap-1">
+              <div key={b.number} className="flex items-center gap-1">
                 <Link
-                  to={`/ledger?block=${b.index}`}
+                  to={`/ledger?block=${b.number}`}
                   className="card-inner flex w-[62px] flex-col items-center gap-1 px-1 py-2.5 hover:border-gold/60"
                   title={b.hash}
                 >
                   <Boxes size={15} className="text-gold" />
-                  <span className="tnum text-xs font-semibold text-ink">#{b.index}</span>
-                  <span className="font-mono text-[9px] text-muted">{b.hash.slice(0, 6)}</span>
+                  <span className="tnum text-xs font-semibold text-ink">#{b.number}</span>
+                  <span className="font-mono text-[9px] text-muted">{b.hash.slice(0, 8)}</span>
                 </Link>
                 {i < arr.length - 1 && <Link2 size={12} className="text-muted" aria-hidden />}
               </div>
@@ -512,7 +508,7 @@ function ChainCard() {
         className="btn-gold mt-4 w-full py-2.5 text-sm"
         disabled={verify.isPending}
       >
-        {verify.isPending ? "Verifying…" : "Verify entire chain"}
+        {verify.isPending ? "Verifying…" : "Verify database against chain"}
       </button>
       {v && (
         <p
@@ -520,8 +516,8 @@ function ChainCard() {
           role="status"
         >
           {v.valid
-            ? `✓ All ${v.blocks_checked} blocks verified — hashes, Merkle roots and links intact.`
-            : `✗ Tampering detected at block #${v.first_broken_index}: ${v.reason}`}
+            ? `✓ All ${v.checked} on-chain records match the database — data hashes, statuses and signatures.`
+            : `✗ ${v.issues.length} mismatch(es) with the blockchain, e.g. ${v.issues[0].tx_id}: ${v.issues[0].detail}`}
         </p>
       )}
     </Card>
@@ -559,7 +555,8 @@ function LiveFeed({ onOpen }: { onOpen: (id: string) => void }) {
                     </span>
                   </span>
                   <span className="mt-0.5 flex items-center gap-2 font-mono text-[11px] text-muted">
-                    {t.tx_hash ? shortHash(t.tx_hash) : t.id} · {timeAgo(t.timestamp)}
+                    {t.id} · {t.block_number !== null ? `block #${t.block_number}` : "off-chain"} ·{" "}
+                    {timeAgo(t.timestamp)}
                   </span>
                 </span>
                 <span className="flex flex-col items-end gap-1">

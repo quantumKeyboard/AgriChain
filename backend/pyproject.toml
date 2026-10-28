@@ -14,11 +14,11 @@ dependencies = [
     "joblib",
     "python-dotenv",
     "networkx",
-    "cryptography",  # Ed25519 transaction signatures
+    "web3>=7,<9",  # talks to the AgriChainLedger smart contract on the Ethereum node
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx", "ruff"]
+dev = ["pytest", "httpx", "ruff", "eth-tester[py-evm]>=0.13.0b1"]  # eth-tester: in-process EVM for tests
 
 [build-system]
 requires = ["setuptools>=68"]

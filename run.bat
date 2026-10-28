@@ -14,6 +14,7 @@ cd /d "%~dp0"
 set "ROOT=%~dp0"
 set "BACKEND=%ROOT%backend"
 set "FRONTEND=%ROOT%frontend"
+set "CHAIN_DIR=%ROOT%blockchain"
 set "VENV_PY=%BACKEND%\.venv\Scripts\python.exe"
 rem Long timeout + retries: slow or unstable connections otherwise abort big downloads.
 set "PIPFLAGS=--disable-pip-version-check --no-input --timeout 120 --retries 10"
@@ -37,12 +38,12 @@ echo       Python  : %PY_LABEL%
 echo       Node.js : %NODE_LABEL%
 echo       Status  : %STATUS%
 echo    ------------------------------------------------------
-echo       [1]  Start the app        (API + UI, opens browser)
+echo       [1]  Start the app        (blockchain + API + UI)
 echo       [2]  Setup / repair       (install everything)
 echo       [3]  Open app in browser
 echo       [4]  Stop the app
 echo    ------------------------------------------------------
-echo       [5]  Start API only       %API_URL%/docs
+echo       [5]  Start blockchain + API  %API_URL%/docs
 echo       [6]  Start UI only        %UI_URL%
 echo       [7]  Reset demo data
 echo       [8]  Retrain the ML model
@@ -87,7 +88,7 @@ set "PY_LABEL=%BASELABEL% (user install, no venv)"
 
 :detect_deps
 set "STATUS=Ready - press 1"
-"%PYEXE%" %PYARGS% -c "import fastapi, sklearn, shap, sqlmodel, uvicorn" >nul 2>&1
+"%PYEXE%" %PYARGS% -c "import fastapi, sklearn, shap, sqlmodel, uvicorn, web3" >nul 2>&1
 if errorlevel 1 set "STATUS=Not installed yet - press 2 for setup"
 
 :detect_node
@@ -103,6 +104,7 @@ if not defined PYEXE (
     goto :eof
 )
 if not exist "%FRONTEND%\node_modules" set "STATUS=Not installed yet - press 2 for setup"
+if not exist "%CHAIN_DIR%\node_modules" set "STATUS=Not installed yet - press 2 for setup"
 goto :eof
 
 
@@ -145,7 +147,7 @@ if not defined BASEEXE (
     goto done
 )
 
-echo  [1/4] Creating a virtual environment in backend\.venv ...
+echo  [1/5] Creating a virtual environment in backend\.venv ...
 "%BASEEXE%" %BASEARGS% -m venv "%BACKEND%\.venv" >nul 2>&1
 if not exist "%VENV_PY%" goto setup_no_venv
 "%VENV_PY%" -m pip --version >nul 2>&1
@@ -160,7 +162,7 @@ rmdir /s /q "%BACKEND%\.venv" >nul 2>&1
 echo        Virtual environments are blocked here - using your user Python instead.
 set "PYEXE=%BASEEXE%"
 set "PYARGS=%BASEARGS%"
-echo  [2/4] Installing Python packages for your user - a few minutes ...
+echo  [2/5] Installing Python packages for your user - a few minutes ...
 call :pip_install --user
 if not errorlevel 1 goto setup_env
 echo        Retrying without --user ...
@@ -171,17 +173,17 @@ goto setup_env
 :setup_install
 set "PYEXE=%VENV_PY%"
 set "PYARGS="
-echo  [2/4] Installing Python packages into backend\.venv - a few minutes ...
+echo  [2/5] Installing Python packages into backend\.venv - a few minutes ...
 call :pip_install
 if errorlevel 1 goto setup_pip_failed
 
 :setup_env
 if not exist "%BACKEND%\.env" copy /y "%BACKEND%\.env.example" "%BACKEND%\.env" >nul
-echo  [3/4] Checking the ML model ...
+echo  [3/5] Checking the ML model ...
 call :ensure_model
 if errorlevel 1 goto done
 
-echo  [4/4] Installing frontend packages - first time only ...
+echo  [4/5] Installing frontend packages - first time only ...
 where npm >nul 2>&1
 if errorlevel 1 (
     echo  [X] Node.js was not found. Install the LTS from https://nodejs.org/
@@ -189,6 +191,15 @@ if errorlevel 1 (
     goto done
 )
 pushd "%FRONTEND%"
+call npm install --no-audit --no-fund
+set "NPMERR=%errorlevel%"
+popd
+if not "%NPMERR%"=="0" (
+    echo  [X] npm install failed - see the messages above.
+    goto done
+)
+echo  [5/5] Installing the blockchain toolkit - Hardhat, Solidity compiler ...
+pushd "%CHAIN_DIR%"
 call npm install --no-audit --no-fund
 set "NPMERR=%errorlevel%"
 popd
@@ -257,6 +268,8 @@ echo %STATUS% | find "Ready" >nul
 if errorlevel 1 goto done
 
 :start_all_go
+call :launch_chain
+if errorlevel 1 goto done
 call :launch_api
 call :launch_ui
 call :wait_for_api
@@ -266,7 +279,8 @@ echo.
 echo  [OK] AgriChain Sentinel is running.
 echo       UI       : %UI_URL%
 echo       API docs : %API_URL%/docs
-echo       Two windows were opened - "AgriChain API" and "AgriChain UI".
+echo       Ethereum : http://127.0.0.1:8545 - Hardhat node
+echo       Three windows were opened - "AgriChain Blockchain", "AgriChain API" and "AgriChain UI".
 echo       Use option 4 in the menu to stop them.
 goto done
 
@@ -280,6 +294,21 @@ exit /b 0
 :setup_inline
 goto setup
 
+
+:launch_chain
+netstat -ano | findstr /r /c:":8545 .*LISTENING" >nul
+if not errorlevel 1 (
+    echo  Ethereum node already running on port 8545.
+    exit /b 0
+)
+echo  Starting the Ethereum node - Hardhat, chain id 31337 ...
+start "AgriChain Blockchain" /D "%CHAIN_DIR%" cmd /k "npm run node"
+for /l %%i in (1,1,40) do (
+    curl -s -o nul -f -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" http://127.0.0.1:8545 >nul 2>&1 && exit /b 0
+    timeout /t 1 /nobreak >nul
+)
+echo  [X] The Ethereum node did not start - check the "AgriChain Blockchain" window.
+exit /b 1
 
 :launch_api
 netstat -ano | findstr /r /c:":8000 .*LISTENING" >nul
@@ -302,8 +331,8 @@ start "AgriChain UI" /D "%FRONTEND%" cmd /k "npm run dev"
 exit /b 0
 
 :wait_for_api
-echo  Waiting for the API to be ready - first start seeds demo data, up to ~30 s ...
-for /l %%i in (1,1,45) do (
+echo  Waiting for the API - it deploys the smart contract and records the demo history, ~20 s ...
+for /l %%i in (1,1,90) do (
     curl -s -o nul -f "%API_URL%/api/health" >nul 2>&1 && exit /b 0
     timeout /t 1 /nobreak >nul
 )
@@ -317,6 +346,9 @@ rem ===========================================================================
 :start_api_only
 call :detect
 if not defined PYEXE goto need_setup
+if not exist "%CHAIN_DIR%\node_modules" goto need_setup
+call :launch_chain
+if errorlevel 1 goto done
 call :launch_api
 call :wait_for_api
 start "" "%API_URL%/docs"
@@ -338,11 +370,12 @@ goto menu
 :stop
 echo.
 echo  Stopping the app ...
-for %%P in (8000 5173) do (
+for %%P in (8000 5173 8545) do (
     for /f "tokens=5" %%A in ('netstat -ano ^| findstr /r /c:":%%P .*LISTENING"') do taskkill /pid %%A /t /f >nul 2>&1
 )
 taskkill /fi "WINDOWTITLE eq AgriChain API*" /t /f >nul 2>&1
 taskkill /fi "WINDOWTITLE eq AgriChain UI*" /t /f >nul 2>&1
+taskkill /fi "WINDOWTITLE eq AgriChain Blockchain*" /t /f >nul 2>&1
 echo  [OK] Stopped.
 goto done
 
@@ -355,7 +388,9 @@ if not errorlevel 1 (
     echo  [OK] Demo data reset through the running API. Refresh the browser.
     goto done
 )
-echo  API is not running - resetting the database directly ...
+echo  API is not running - resetting directly, needs the Ethereum node ...
+call :launch_chain
+if errorlevel 1 goto done
 pushd "%BACKEND%"
 "%PYEXE%" %PYARGS% scripts\seed_demo.py
 popd
@@ -385,6 +420,11 @@ popd
 echo.
 echo  === Frontend tests ===
 pushd "%FRONTEND%"
+call npm test
+popd
+echo.
+echo  === Smart contract tests ===
+pushd "%CHAIN_DIR%"
 call npm test
 popd
 goto done

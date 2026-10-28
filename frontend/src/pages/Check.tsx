@@ -361,27 +361,39 @@ export default function Check() {
                       <Link2 size={15} className="text-gold" /> Recorded as {submit.data.tx_id}
                     </p>
                     <p className="mt-1 text-xs text-muted">
-                      {submit.data.decision === "QUARANTINED" ? (
+                      {submit.data.on_chain ? (
                         <>
-                          Held in quarantine —{" "}
-                          <Link to="/quarantine" className="text-gold hover:underline">
-                            review it now
-                          </Link>
-                          .
-                        </>
-                      ) : submit.data.sealed_blocks?.length ? (
-                        <>
-                          Sealed into{" "}
+                          Recorded on Ethereum in{" "}
                           <Link
-                            to={`/ledger?block=${submit.data.sealed_blocks.at(-1)}`}
+                            to={`/ledger?block=${submit.data.on_chain.block}`}
                             className="text-gold hover:underline"
                           >
-                            block #{submit.data.sealed_blocks.at(-1)}
-                          </Link>
+                            block #{submit.data.on_chain.block}
+                          </Link>{" "}
+                          as{" "}
+                          {submit.data.decision === "QUARANTINED"
+                            ? "pending review"
+                            : submit.data.decision.toLowerCase()}
+                          {submit.data.decision === "QUARANTINED" && (
+                            <>
+                              {" "}
+                              —{" "}
+                              <Link to="/quarantine" className="text-gold hover:underline">
+                                review it now
+                              </Link>
+                            </>
+                          )}
                           .
                         </>
                       ) : (
-                        "Added to the mempool — sealed when the next block fills."
+                        <>
+                          Not sent to the blockchain: the seller&apos;s signature is invalid, so the smart
+                          contract would reject it. Held in{" "}
+                          <Link to="/quarantine" className="text-gold hover:underline">
+                            quarantine
+                          </Link>
+                          .
+                        </>
                       )}
                     </p>
                   </div>

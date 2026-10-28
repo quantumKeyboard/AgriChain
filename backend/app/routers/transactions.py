@@ -4,13 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, col, select
 
 from app.chain import identity
+from app.chain.ethereum import get_chain
 from app.db import get_session
 from app.ml.features import FEATURE_LABELS
 from app.models import Assessment, Review, Transaction
 from app.schemas import TransactionIn
 from app.services import PipelineError, assess, ingest
 from app.sim.generator import FRAUD_LABELS, reference_price
-from app.sim.state import get_sim
+from app.sim.state import forger_for, get_sim
 from app.views import load_views
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
@@ -26,12 +27,8 @@ def to_raw(body: TransactionIn) -> tuple[dict, dict | None]:
     data["sim_label"] = None
     if body.forge_signature:
         # Someone other than the seller signs the invoice (identity spoofing demo).
-        data["signature"] = identity.sign(data, forger_for(data["seller_id"]))
+        data["signature"] = identity.sign_invoice(data, forger_for(data["seller_id"]), get_chain().domain())
     return data, body.batch.model_dump() if body.batch else None
-
-
-def forger_for(seller_id: str) -> str:
-    return "D-001" if seller_id != "D-001" else "D-002"
 
 
 def present(result: dict) -> dict:

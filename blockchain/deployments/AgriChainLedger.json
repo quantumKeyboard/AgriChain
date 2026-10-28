@@ -1,0 +1,1092 @@
+{
+  "contractName": "AgriChainLedger",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "oracle",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "auditor",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "AccessControlBadConfirmation",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "neededRole",
+          "type": "bytes32"
+        }
+      ],
+      "name": "AccessControlUnauthorizedAccount",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint16",
+          "name": "riskBps",
+          "type": "uint16"
+        }
+      ],
+      "name": "InvalidRisk",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "expectedSeller",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "recoveredSigner",
+          "type": "address"
+        }
+      ],
+      "name": "InvalidSellerSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidShortString",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "LengthMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "enum AgriChainLedger.Status",
+          "name": "status",
+          "type": "uint8"
+        }
+      ],
+      "name": "NotPendingReview",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "RecordExists",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "RecordNotFound",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SellerIsBuyer",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "str",
+          "type": "string"
+        }
+      ],
+      "name": "StringTooLong",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "UnknownParticipant",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [],
+      "name": "EIP712DomainChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "id",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum AgriChainLedger.Role",
+          "name": "role",
+          "type": "uint8"
+        }
+      ],
+      "name": "ParticipantRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "previousAdminRole",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "newAdminRole",
+          "type": "bytes32"
+        }
+      ],
+      "name": "RoleAdminChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        }
+      ],
+      "name": "RoleGranted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        }
+      ],
+      "name": "RoleRevoked",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "buyer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "dataHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint16",
+          "name": "riskBps",
+          "type": "uint16"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum AgriChainLedger.Status",
+          "name": "status",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "fraudType",
+          "type": "uint8"
+        }
+      ],
+      "name": "TransactionRecorded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum AgriChainLedger.Status",
+          "name": "status",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "auditor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "noteHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "VerdictRecorded",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "AUDITOR_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "DEFAULT_ADMIN_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "INVOICE_TYPEHASH",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "ORACLE_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "REGISTRAR_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "batchId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "batchTrail",
+      "outputs": [
+        {
+          "internalType": "bytes32[]",
+          "name": "",
+          "type": "bytes32[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "eip712Domain",
+      "outputs": [
+        {
+          "internalType": "bytes1",
+          "name": "fields",
+          "type": "bytes1"
+        },
+        {
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "version",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "chainId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "verifyingContract",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "salt",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "extensions",
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "getRecord",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "bytes32",
+              "name": "batchId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "address",
+              "name": "seller",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "buyer",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "dataHash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint16",
+              "name": "riskBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint8",
+              "name": "fraudType",
+              "type": "uint8"
+            },
+            {
+              "internalType": "enum AgriChainLedger.Status",
+              "name": "status",
+              "type": "uint8"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "modelVersion",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint64",
+              "name": "recordedAt",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint64",
+              "name": "recordedBlock",
+              "type": "uint64"
+            },
+            {
+              "internalType": "address",
+              "name": "auditor",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "verdictNoteHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct AgriChainLedger.Record",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32[]",
+          "name": "txIds",
+          "type": "bytes32[]"
+        }
+      ],
+      "name": "getRecords",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "bytes32",
+              "name": "batchId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "address",
+              "name": "seller",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "buyer",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "dataHash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint16",
+              "name": "riskBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint8",
+              "name": "fraudType",
+              "type": "uint8"
+            },
+            {
+              "internalType": "enum AgriChainLedger.Status",
+              "name": "status",
+              "type": "uint8"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "modelVersion",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint64",
+              "name": "recordedAt",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint64",
+              "name": "recordedBlock",
+              "type": "uint64"
+            },
+            {
+              "internalType": "address",
+              "name": "auditor",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "verdictNoteHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct AgriChainLedger.Record[]",
+          "name": "out",
+          "type": "tuple[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        }
+      ],
+      "name": "getRoleAdmin",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "grantRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "hasRole",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "bytes32",
+              "name": "txId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "batchId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "address",
+              "name": "seller",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "buyer",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "dataHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct AgriChainLedger.Invoice",
+          "name": "inv",
+          "type": "tuple"
+        }
+      ],
+      "name": "invoiceDigest",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "participantAddress",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "participants",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "id",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "enum AgriChainLedger.Role",
+          "name": "role",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bool",
+          "name": "active",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "recordCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        }
+      ],
+      "name": "recordIdAt",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "bytes32",
+              "name": "txId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "batchId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "address",
+              "name": "seller",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "buyer",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "dataHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct AgriChainLedger.Invoice",
+          "name": "inv",
+          "type": "tuple"
+        },
+        {
+          "internalType": "bytes",
+          "name": "sellerSignature",
+          "type": "bytes"
+        },
+        {
+          "components": [
+            {
+              "internalType": "uint16",
+              "name": "riskBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "enum AgriChainLedger.Decision",
+              "name": "decision",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint8",
+              "name": "fraudType",
+              "type": "uint8"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "modelVersion",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct AgriChainLedger.Assessment",
+          "name": "assessment",
+          "type": "tuple"
+        }
+      ],
+      "name": "recordTransaction",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "bytes32",
+              "name": "txId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "batchId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "address",
+              "name": "seller",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "buyer",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "dataHash",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct AgriChainLedger.Invoice[]",
+          "name": "invs",
+          "type": "tuple[]"
+        },
+        {
+          "internalType": "bytes[]",
+          "name": "sellerSignatures",
+          "type": "bytes[]"
+        },
+        {
+          "components": [
+            {
+              "internalType": "uint16",
+              "name": "riskBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "enum AgriChainLedger.Decision",
+              "name": "decision",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint8",
+              "name": "fraudType",
+              "type": "uint8"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "modelVersion",
+              "type": "bytes32"
+            }
+          ],
+          "internalType": "struct AgriChainLedger.Assessment[]",
+          "name": "assessments",
+          "type": "tuple[]"
+        }
+      ],
+      "name": "recordTransactions",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address[]",
+          "name": "accounts",
+          "type": "address[]"
+        },
+        {
+          "internalType": "bytes32[]",
+          "name": "ids",
+          "type": "bytes32[]"
+        },
+        {
+          "internalType": "enum AgriChainLedger.Role[]",
+          "name": "roles",
+          "type": "uint8[]"
+        }
+      ],
+      "name": "registerParticipants",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "callerConfirmation",
+          "type": "address"
+        }
+      ],
+      "name": "renounceRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bool",
+          "name": "approve",
+          "type": "bool"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "noteHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "resolve",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "revokeRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes4",
+          "name": "interfaceId",
+          "type": "bytes4"
+        }
+      ],
+      "name": "supportsInterface",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "txId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "dataHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "verifyRecord",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "matches",
+          "type": "bool"
+        },
+        {
+          "internalType": "enum AgriChainLedger.Status",
+          "name": "status",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x610160604052348015610010575f5ffd5b506040516126ba3803806126ba83398101604081905261002f916102f7565b6040518060400160405280600f81526020016e20b3b934a1b430b4b72632b233b2b960891b815250604051806040016040528060018152602001603160f81b8152506100856001836101bd60201b90919060201c565b610120526100948160026101bd565b61014052815160208084019190912060e052815190820120610100524660a05261012060e05161010051604080517f8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f60208201529081019290925260608201524660808201523060a08201525f9060c00160405160208183030381529060405280519060200120905090565b60805250503060c0526101335f846101ef565b5061015e7fedcc084d3dcd65a1f7f23c65c46722faca6953d28e43150a467cf43e5c309238846101ef565b506101897f68e79a7bf1e0bc45d0a330c573bc367f9cf464fd326078812f301165fbda4ef1836101ef565b506101b47f59a1c48e5837ad7a7f3dcedcbe129bf3249ec4fbf651fd4f5e2600ead39fe2f5826101ef565b505050506104e1565b5f6020835110156101d8576101d183610296565b90506101e9565b816101e384826103cf565b5060ff90505b92915050565b5f828152602081815260408083206001600160a01b038516845290915281205460ff1661028f575f838152602081815260408083206001600160a01b03861684529091529020805460ff191660011790556102473390565b6001600160a01b0316826001600160a01b0316847f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a45060016101e9565b505f6101e9565b5f5f829050601f815111156102c9578260405163305a27a960e01b81526004016102c09190610489565b60405180910390fd5b80516102d4826104be565b179392505050565b80516001600160a01b03811681146102f2575f5ffd5b919050565b5f5f5f60608486031215610309575f5ffd5b610312846102dc565b9250610320602085016102dc565b915061032e604085016102dc565b90509250925092565b634e487b7160e01b5f52604160045260245ffd5b600181811c9082168061035f57607f821691505b60208210810361037d57634e487b7160e01b5f52602260045260245ffd5b50919050565b601f8211156103ca57805f5260205f20601f840160051c810160208510156103a85750805b601f840160051c820191505b818110156103c7575f81556001016103b4565b50505b505050565b81516001600160401b038111156103e8576103e8610337565b6103fc816103f6845461034b565b84610383565b6020601f82116001811461042e575f83156104175750848201515b5f19600385901b1c1916600184901b1784556103c7565b5f84815260208120601f198516915b8281101561045d578785015182556020948501946001909201910161043d565b508482101561047a57868401515f19600387901b60f8161c191681555b50505050600190811b01905550565b602081525f82518060208401528060208501604085015e5f604082850101526040601f19601f83011684010191505092915050565b8051602080830151919081101561037d575f1960209190910360031b1b16919050565b60805160a05160c05160e0516101005161012051610140516121886105325f395f6114e801525f6114b601525f61174201525f61171a01525f61167501525f61169f01525f6116c901526121885ff3fe608060405234801561000f575f5ffd5b506004361061016d575f3560e01c80634ca2279a116100d9578063900407bc11610093578063c4ef29fb1161006e578063c4ef29fb146103e3578063d547741f146103f6578063f68e955314610409578063f838585f14610430575f5ffd5b8063900407bc146103c157806391d14854146103c9578063a217fddf146103dc575f5ffd5b80634ca2279a146103125780634fe1681a146103325780636e1d616e146103595780636eb253cd1461038057806384b0196e14610393578063870805dd146103ae575f5ffd5b80632f2ff15d1161012a5780632f2ff15d1461026657806336568abe14610279578063411af8101461028c578063413b3693146102ac578063490be023146102bf57806349ca51a9146102d2575f5ffd5b806301ffc9a71461017157806307e2cea51461019957806309e69ede146101ce578063213681cd1461020f578063248a9ca31461022f5780632d9c3bed14610251575b5f5ffd5b61018461017f36600461191d565b610451565b60405190151581526020015b60405180910390f35b6101c07f68e79a7bf1e0bc45d0a330c573bc367f9cf464fd326078812f301165fbda4ef181565b604051908152602001610190565b6102006101dc366004611966565b60036020525f90815260409020805460019091015460ff8082169161010090041683565b604051610190939291906119af565b61022261021d3660046119d5565b610487565b6040516101909190611ae8565b6101c061023d3660046119d5565b5f9081526020819052604090206001015490565b61026461025f366004611b77565b610583565b005b610264610274366004611c41565b610655565b610264610287366004611c41565b61067f565b61029f61029a366004611c6b565b6106b7565b6040516101909190611ca9565b6101c06102ba3660046119d5565b61084d565b6102646102cd366004611cf7565b610871565b6102fa6102e03660046119d5565b60046020525f90815260409020546001600160a01b031681565b6040516001600160a01b039091168152602001610190565b6103256103203660046119d5565b6109e8565b6040516101909190611d30565b6101c07f9830efdd9d9d90432754ce5b67d8a8d5ea7320e067ef5606627ed2666568629981565b6101c07f59a1c48e5837ad7a7f3dcedcbe129bf3249ec4fbf651fd4f5e2600ead39fe2f581565b61026461038e366004611d67565b610a47565b61039b610ccb565b6040516101909796959493929190611e1f565b6101c06103bc366004611ecb565b610d0d565b6007546101c0565b6101846103d7366004611c41565b610db4565b6101c05f81565b6102646103f1366004611ee5565b610ddc565b610264610404366004611c41565b610e19565b6101c07fedcc084d3dcd65a1f7f23c65c46722faca6953d28e43150a467cf43e5c30923881565b61044361043e366004611f7d565b610e3d565b604051610190929190611f9d565b5f6001600160e01b03198216637965db0b60e01b148061048157506301ffc9a760e01b6001600160e01b03198316145b92915050565b61048f6118be565b5f828152600560208181526040928390208351610180810185528154815260018201546001600160a01b039081169382019390935260028201549092169382019390935260038301546060820152600483015461ffff8116608083015260ff620100008204811660a084015291939260c085019263010000009092049091169081111561051e5761051e61197f565b600581111561052f5761052f61197f565b81526005820154602082015260068201546001600160401b038082166040840152600160401b90910416606082015260078201546001600160a01b0316608082015260089091015460a09091015292915050565b7f68e79a7bf1e0bc45d0a330c573bc367f9cf464fd326078812f301165fbda4ef16105ad81610e9c565b85841415806105bc5750858214155b156105dd576040516001621398b960e31b0319815260040160405180910390fd5b5f5b8681101561064b576106438888838181106105fc576105fc611fbc565b905060a0020187878481811061061457610614611fbc565b90506020028101906106269190611fd0565b87878681811061063857610638611fbc565b905060800201610ea9565b6001016105df565b5050505050505050565b5f8281526020819052604090206001015461066f81610e9c565b61067983836113b7565b50505050565b6001600160a01b03811633146106a85760405163334bd91960e11b815260040160405180910390fd5b6106b28282611446565b505050565b6060816001600160401b038111156106d1576106d1612012565b60405190808252806020026020018201604052801561070a57816020015b6106f76118be565b8152602001906001900390816106ef5790505b5090505f5b828110156108465760055f85858481811061072c5761072c611fbc565b602090810292909201358352508181019290925260409081015f208151610180810183528154815260018201546001600160a01b039081169482019490945260028201549093169183019190915260038101546060830152600481015461ffff8116608084015260ff620100008204811660a085015260c0840191630100000090041660058111156107c0576107c061197f565b60058111156107d1576107d161197f565b81526005820154602082015260068201546001600160401b038082166040840152600160401b90910416606082015260078201546001600160a01b0316608082015260089091015460a090910152825183908390811061083357610833611fbc565b602090810291909101015260010161070f565b5092915050565b5f6007828154811061086157610861611fbc565b905f5260205f2001549050919050565b7f59a1c48e5837ad7a7f3dcedcbe129bf3249ec4fbf651fd4f5e2600ead39fe2f561089b81610e9c565b5f8481526005602052604081209060048201546301000000900460ff1660058111156108c9576108c961197f565b036108ef576040516333853f3560e11b8152600481018690526024015b60405180910390fd5b600360048201546301000000900460ff1660058111156109115761091161197f565b146109405760048181015460405163bd7d407b60e01b81526108e69288926301000000900460ff169101612026565b8361094c57600561094f565b60045b60048201805463ff000000191663010000008360058111156109735761097361197f565b02179055506007810180546001600160a01b0319163390811790915560088201849055600482015460405187917fdf01ee25debd52421c0ffd88c68213c9aeb6bbdde22aeb42e678f707518668b8916109d99160ff630100000090910416908890612036565b60405180910390a35050505050565b5f81815260066020908152604091829020805483518184028101840190945280845260609392830182828015610a3b57602002820191905f5260205f20905b815481526020019060010190808311610a27575b50505050509050919050565b7fedcc084d3dcd65a1f7f23c65c46722faca6953d28e43150a467cf43e5c309238610a7181610e9c565b8584141580610a805750838214155b15610aa1576040516001621398b960e31b0319815260040160405180910390fd5b5f5b8681101561064b576040518060600160405280878784818110610ac857610ac8611fbc565b905060200201358152602001858584818110610ae657610ae6611fbc565b9050602002016020810190610afb919061204d565b6005811115610b0c57610b0c61197f565b8152600160209091015260035f8a8a85818110610b2b57610b2b611fbc565b9050602002016020810190610b409190611966565b6001600160a01b031681526020808201929092526040015f20825181559082015160018083018054909160ff1990911690836005811115610b8357610b8361197f565b021790555060409190910151600190910180549115156101000261ff0019909216919091179055878782818110610bbc57610bbc611fbc565b9050602002016020810190610bd19190611966565b60045f888885818110610be657610be6611fbc565b9050602002013581526020019081526020015f205f6101000a8154816001600160a01b0302191690836001600160a01b03160217905550858582818110610c2f57610c2f611fbc565b90506020020135888883818110610c4857610c48611fbc565b9050602002016020810190610c5d9190611966565b6001600160a01b03167f0602f045f71981f5a2966f52defc4135eb88b847be42ec5849780fbf5f956609868685818110610c9957610c99611fbc565b9050602002016020810190610cae919061204d565b604051610cbb919061206b565b60405180910390a3600101610aa3565b5f6060805f5f5f6060610cdc6114af565b610ce46114e1565b604080515f80825260208201909252600f60f81b9b939a50919850469750309650945092509050565b5f6104817f9830efdd9d9d90432754ce5b67d8a8d5ea7320e067ef5606627ed2666568629983356020850135610d496060870160408801611966565b610d596080880160608901611966565b60408051602081019690965285019390935260608401919091526001600160a01b03908116608084810191909152911660a083015284013560c082015260e0016040516020818303038152906040528051906020012061150e565b5f918252602082815260408084206001600160a01b0393909316845291905290205460ff1690565b7f68e79a7bf1e0bc45d0a330c573bc367f9cf464fd326078812f301165fbda4ef1610e0681610e9c565b610e1285858585610ea9565b5050505050565b5f82815260208190526040902060010154610e3381610e9c565b6106798383611446565b5f82815260056020526040812081908160048201546301000000900460ff166005811115610e6d57610e6d61197f565b14158015610e7e5750838160030154145b60049091015490925060ff63010000009091041690505b9250929050565b610ea6813361153a565b50565b60035f610ebc6060870160408801611966565b6001600160a01b0316815260208101919091526040015f2060010154610100900460ff16610f1957610ef46060850160408601611966565b604051633f18486560e11b81526001600160a01b0390911660048201526024016108e6565b60035f610f2c6080870160608801611966565b6001600160a01b0316815260208101919091526040015f2060010154610100900460ff16610f6457610ef46080850160608601611966565b610f746080850160608601611966565b6001600160a01b0316610f8d6060860160408701611966565b6001600160a01b031603610fb457604051638a39288360e01b815260040160405180910390fd5b83355f9081526005602081905260408220600401546301000000900460ff1690811115610fe357610fe361197f565b146110045760405163cd4866db60e01b8152843560048201526024016108e6565b612710611014602083018361207e565b61ffff16111561104b5761102b602082018261207e565b604051633205240f60e21b815261ffff90911660048201526024016108e6565b5f5f61109461105987610d0d565b86868080601f0160208091040260200160405190810160405280939291908181526020018383808284375f9201919091525061157792505050565b5090925090505f8160038111156110ad576110ad61197f565b1415806110db57506110c56060870160408801611966565b6001600160a01b0316826001600160a01b031614155b1561111d576110f06060870160408801611966565b60405163ce39ebf960e01b81526001600160a01b03918216600482015290831660248201526044016108e6565b5f8061112f604086016020870161209f565b60028111156111405761114061197f565b1461117b576001611157604086016020870161209f565b60028111156111685761116861197f565b1461117457600361117e565b600261117e565b60015b87355f90815260056020908152604091829020908a013581559192506111aa9060608a01908a01611966565b6001820180546001600160a01b0319166001600160a01b03929092169190911790556111dc6080890160608a01611966565b6002820180546001600160a01b0319166001600160a01b039290921691909117905560808801356003820155611215602086018661207e565b60048201805461ffff191661ffff9290921691909117905561123d60608601604087016120bd565b60048201805460ff92909216620100000262ff000019831681178255849263ff0000001990911663ffff0000199091161763010000008360058111156112855761128561197f565b0217905550606080860135600583015560068083018054436001600160401b03908116600160401b026fffffffffffffffffffffffffffffffff199092164291909116171790556007805460018181019092558b357fa66cc928b5edb82af9bd49922954155ab7b0942694bea4ce44661d9a8736c6889091018190556020808d01355f9081529381526040808520805494850181558552932090910155611330918a01908a01611966565b6001600160a01b0316602089013589357fbbca365627fc2986d321854d3652f7f9d3faf1008f8728b9c7f8f0b182a7758661137160808d0160608e01611966565b60808d013561138360208c018c61207e565b8861139460608e0160408f016120bd565b6040516113a59594939291906120dd565b60405180910390a45050505050505050565b5f6113c28383610db4565b61143f575f838152602081815260408083206001600160a01b03861684529091529020805460ff191660011790556113f73390565b6001600160a01b0316826001600160a01b0316847f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a4506001610481565b505f610481565b5f6114518383610db4565b1561143f575f838152602081815260408083206001600160a01b0386168085529252808320805460ff1916905551339286917ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9190a4506001610481565b60606114dc7f000000000000000000000000000000000000000000000000000000000000000060016115c0565b905090565b60606114dc7f000000000000000000000000000000000000000000000000000000000000000060026115c0565b5f61048161151a611669565b8360405161190160f01b8152600281019290925260228201526042902090565b6115448282610db4565b6115735760405163e2517d3f60e01b81526001600160a01b0382166004820152602481018390526044016108e6565b5050565b5f5f5f83516041036115ae576020840151604085015160608601515f1a6115a088828585611792565b9550955095505050506115b9565b505081515f91506002905b9250925092565b606060ff83146115da576115d38361185a565b9050610481565b8180546115e690612120565b80601f016020809104026020016040519081016040528092919081815260200182805461161290612120565b801561165d5780601f106116345761010080835404028352916020019161165d565b820191905f5260205f20905b81548152906001019060200180831161164057829003601f168201915b50505050509050610481565b5f306001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161480156116c157507f000000000000000000000000000000000000000000000000000000000000000046145b156116eb57507f000000000000000000000000000000000000000000000000000000000000000090565b6114dc604080517f8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f60208201527f0000000000000000000000000000000000000000000000000000000000000000918101919091527f000000000000000000000000000000000000000000000000000000000000000060608201524660808201523060a08201525f9060c00160405160208183030381529060405280519060200120905090565b5f80807f7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a08411156117cb57505f91506003905082611850565b604080515f808252602082018084528a905260ff891692820192909252606081018790526080810186905260019060a0016020604051602081039080840390855afa15801561181c573d5f5f3e3d5ffd5b5050604051601f1901519150506001600160a01b03811661184757505f925060019150829050611850565b92505f91508190505b9450945094915050565b60605f61186683611897565b6040805160208082528183019092529192505f91906020820181803683375050509182525060208101929092525090565b5f60ff8216601f81111561048157604051632cd44ac360e21b815260040160405180910390fd5b60408051610180810182525f80825260208201819052918101829052606081018290526080810182905260a081018290529060c082019081525f6020820181905260408201819052606082018190526080820181905260a09091015290565b5f6020828403121561192d575f5ffd5b81356001600160e01b031981168114611944575f5ffd5b9392505050565b80356001600160a01b0381168114611961575f5ffd5b919050565b5f60208284031215611976575f5ffd5b6119448261194b565b634e487b7160e01b5f52602160045260245ffd5b60068110610ea657634e487b7160e01b5f52602160045260245ffd5b838152606081016119bf84611993565b8360208301528215156040830152949350505050565b5f602082840312156119e5575f5ffd5b5035919050565b6119f581611993565b9052565b805182526020810151611a1760208401826001600160a01b03169052565b506040810151611a3260408401826001600160a01b03169052565b50606081015160608301526080810151611a52608084018261ffff169052565b5060a0810151611a6760a084018260ff169052565b5060c0810151611a7a60c08401826119ec565b5060e081015160e0830152610100810151611aa16101008401826001600160401b03169052565b50610120810151611abe6101208401826001600160401b03169052565b50610140810151611adb6101408401826001600160a01b03169052565b5061016090810151910152565b610180810161048182846119f9565b5f5f83601f840112611b07575f5ffd5b5081356001600160401b03811115611b1d575f5ffd5b6020830191508360208260051b8501011115610e95575f5ffd5b5f5f83601f840112611b47575f5ffd5b5081356001600160401b03811115611b5d575f5ffd5b6020830191508360208260071b8501011115610e95575f5ffd5b5f5f5f5f5f5f60608789031215611b8c575f5ffd5b86356001600160401b03811115611ba1575f5ffd5b8701601f81018913611bb1575f5ffd5b80356001600160401b03811115611bc6575f5ffd5b89602060a083028401011115611bda575f5ffd5b6020918201975095508701356001600160401b03811115611bf9575f5ffd5b611c0589828a01611af7565b90955093505060408701356001600160401b03811115611c23575f5ffd5b611c2f89828a01611b37565b979a9699509497509295939492505050565b5f5f60408385031215611c52575f5ffd5b82359150611c626020840161194b565b90509250929050565b5f5f60208385031215611c7c575f5ffd5b82356001600160401b03811115611c91575f5ffd5b611c9d85828601611af7565b90969095509350505050565b602080825282518282018190525f918401906040840190835b81811015611cec57611cd58385516119f9565b602093909301926101809290920191600101611cc2565b509095945050505050565b5f5f5f60608486031215611d09575f5ffd5b8335925060208401358015158114611d1f575f5ffd5b929592945050506040919091013590565b602080825282518282018190525f918401906040840190835b81811015611cec578351835260209384019390920191600101611d49565b5f5f5f5f5f5f60608789031215611d7c575f5ffd5b86356001600160401b03811115611d91575f5ffd5b611d9d89828a01611af7565b90975095505060208701356001600160401b03811115611dbb575f5ffd5b611dc789828a01611af7565b90955093505060408701356001600160401b03811115611de5575f5ffd5b611c2f89828a01611af7565b5f81518084528060208401602086015e5f602082860101526020601f19601f83011685010191505092915050565b60ff60f81b8816815260e060208201525f611e3d60e0830189611df1565b8281036040840152611e4f8189611df1565b606084018890526001600160a01b038716608085015260a0840186905283810360c0850152845180825260208087019350909101905f5b81811015611ea4578351835260209384019390920191600101611e86565b50909b9a5050505050505050505050565b5f60a08284031215611ec5575f5ffd5b50919050565b5f60a08284031215611edb575f5ffd5b6119448383611eb5565b5f5f5f5f848603610140811215611efa575f5ffd5b611f048787611eb5565b945060a08601356001600160401b03811115611f1e575f5ffd5b8601601f81018813611f2e575f5ffd5b80356001600160401b03811115611f43575f5ffd5b886020828401011115611f54575f5ffd5b60209190910194509250608060bf1982011215611f6f575f5ffd5b5092959194509260c0019150565b5f5f60408385031215611f8e575f5ffd5b50508035926020909101359150565b821515815260408101611faf83611993565b8260208301529392505050565b634e487b7160e01b5f52603260045260245ffd5b5f5f8335601e19843603018112611fe5575f5ffd5b8301803591506001600160401b03821115611ffe575f5ffd5b602001915036819003821315610e95575f5ffd5b634e487b7160e01b5f52604160045260245ffd5b82815260408101611faf83611993565b6040810161204384611993565b9281526020015290565b5f6020828403121561205d575f5ffd5b813560068110611944575f5ffd5b6020810161207883611993565b91905290565b5f6020828403121561208e575f5ffd5b813561ffff81168114611944575f5ffd5b5f602082840312156120af575f5ffd5b813560038110611944575f5ffd5b5f602082840312156120cd575f5ffd5b813560ff81168114611944575f5ffd5b6001600160a01b03861681526020810185905261ffff8416604082015260a0810161210784611993565b83606083015260ff831660808301529695505050505050565b600181811c9082168061213457607f821691505b602082108103611ec557634e487b7160e01b5f52602260045260245ffdfea26469706673582212209c226016f9c06577b68be19ba32269f10b713cd9adeaf94b3338844c6ab3d80964736f6c634300081c0033"
+}

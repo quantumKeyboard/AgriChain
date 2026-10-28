@@ -80,3 +80,13 @@ export function decisionFor(risk: number, flag = 0.4, quarantine = 0.7): Decisio
 export function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/** 0x-prefixed Ethereum hash or address, shortened: 0x1234ab…9f3c */
+export function ethShort(h: string | null | undefined, n = 6): string {
+  if (!h) return "—";
+  return `${h.slice(0, n + 2)}…${h.slice(-4)}`;
+}
+
+export function unixClock(seconds: number): string {
+  return clock(new Date(seconds * 1000).toISOString());
+}

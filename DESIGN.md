@@ -1,16 +1,16 @@
 # AgriChain Sentinel — Design
 
-> AgriChain Sentinel is a course-project web app that watches agricultural supply-chain transactions (farmer → cooperative → processor → distributor → retailer), scores each one for fraud with a hybrid ML + rules engine *before* it is recorded, and writes the outcome to a tamper-evident hash-chained ledger. Clean transactions are sealed into blocks; suspicious ones are quarantined for an auditor; anyone can later verify that history was not altered. It is built to be demonstrated in five minutes: a live transaction stream, one-click fraud injection, an explainable alert, and a "tamper with the ledger" button that the chain catches.
+> AgriChain Sentinel is a course-project web app that watches agricultural supply-chain transactions (farmer → cooperative → processor → distributor → retailer), scores each one for fraud with a hybrid ML + rules engine, and records the outcome in a **Solidity smart contract on an Ethereum node** (a local Hardhat node). Each seller signs its invoice (EIP-712); the contract verifies the signature and keeps write-once records. Suspicious transactions are recorded as *PendingReview* for an auditor, whose verdict is an on-chain transaction too; the app re-reads the contract to prove the off-chain database was not altered. It is built to be demonstrated in five minutes: a live transaction stream, one-click fraud injection, an explainable alert, and attack buttons that the contract rejects.
 
 ## 1. Overview
 - **Core job:** Catch fraudulent agricultural supply-chain transactions before they are committed, and keep an auditable, tamper-evident record of every decision.
 - **Target users:** (a) a **supply-chain auditor / compliance officer** reviewing flagged transactions on a desktop; (b) a **supply-chain participant** (cooperative manager, processor) submitting or checking a transaction; (c) the **course evaluator** watching a live demo. Primary context: laptop browser, projector.
-- **Success looks like:** the 5-minute demo script (§4) runs end to end with no manual DB edits; held-out per-fraud-type recall ≥ 0.80 and overall PR-AUC ≥ 0.85 (on synthetic data, reported honestly as such); `GET /api/chain/verify` detects a tampered block and names the first broken index.
-- **Non-goals:** a production blockchain network, real money movement, real farmer identity/KYC, real-time IoT hardware, mobile app, a public Ethereum deployment.
+- **Success looks like:** the 5-minute demo script (§4) runs end to end with no manual DB edits; held-out per-fraud-type recall ≥ 0.80 and overall PR-AUC ≥ 0.85 (on synthetic data, reported honestly as such); `GET /api/chain/verify` names every transaction whose database copy no longer matches the contract; on-chain attacks revert with the contract's custom error.
+- **Non-goals:** a production multi-node network, real money movement, real farmer identity/KYC, real-time IoT hardware, mobile app, a public mainnet deployment.
 
 ## 2. Assumptions and open questions
 - **Assumed:** 2–3 students, comfortable with Python and JavaScript/React, ~4 weeks part-time, demo on a laptop, assessed by demo + report + viva.
-- **Assumed:** the course accepts a **simulated single-node blockchain** (SHA-256 hash chain, Merkle roots, proof-of-work, chain verification) rather than a deployed Ethereum smart contract. *This is the biggest thing to confirm with your instructor.* If smart contracts are required, see the "Ethereum anchoring" item in Later — it is a contained 1–2 day add-on, not a rewrite.
+- **Decided (changed after M8):** the instructor-facing requirement is a *working* blockchain, not a simulation. The custom Python hash chain was replaced by the `AgriChainLedger` Solidity contract on a local Hardhat Ethereum node (see §7 Build status). A public testnet (Sepolia) is supported by configuration but not used in the demo.
 - **Assumed:** **no real dataset** is needed. The ML model is **trained from scratch on a synthetic agri-transaction dataset we generate**, because (1) no pretrained Hugging Face model exists for tabular agricultural-transaction fraud — a pretrained text/vision model would be bolted on for show; (2) generating the data gives ground-truth labels for *which type* of fraud each case is, which drives the explanations and per-type evaluation. Limitation is stated openly in the report: synthetic data makes scores optimistic.
 - **Assumed:** India-flavoured context (crops: wheat, rice, onion, tomato, soybean, mango; amounts in INR; mandi-style reference prices). Change `CROPS` and currency in one config file if you prefer another region.
 - **Assumed:** no real login. A demo has one user; role switching is cosmetic (nav only). Real auth is cut.
@@ -24,11 +24,11 @@ Candidates were brainstormed across core loop, first run, coming back, trust & s
 ### MVP (10 — each is small; together they make the demo, slightly above the usual 8 because a course demo needs both halves of the title plus the evaluation)
 - **Synthetic agri dataset generator** — simulates participants, crops, seasons, prices and 6 injected fraud types with noise and benign outliers. *Why:* without labelled data there is no ML; also powers the live simulator.
 - **Hybrid fraud scoring with explanations** — Random Forest (fraud type + probability) + Isolation Forest (novel anomalies) + a named-rule engine → one 0–1 risk score, a fraud-type guess, rule reasons and SHAP top factors. *Why:* this is the core job; explanations make alerts auditable.
-- **Hash-chained ledger** — transactions sealed into blocks (prev-hash link, Merkle root, small proof-of-work), plus `verify` that recomputes everything. *Why:* the "blockchain" half of the title; makes records tamper-evident.
-- **Quarantine & auditor review** — risk ≥ block threshold is held; auditor approves or rejects with a note; either outcome is written to the chain. *Why:* the point where ML and blockchain meet — fraud is stopped *before* commit and the decision is auditable.
+- **Smart-contract ledger** — `AgriChainLedger.sol` on a local Ethereum node: the ML oracle records each transaction (keccak256 hash of the invoice, risk, fraud type, status); records are write-once; role-based access; plus `verify` that re-reads every record and compares it with the database. *Why:* the "blockchain" half of the title, on a real EVM.
+- **Quarantine & auditor review** — risk ≥ quarantine threshold is recorded as `PendingReview`; the auditor approves or rejects with a note via an on-chain `resolve()` (exactly once). *Why:* the point where ML and blockchain meet — fraud is held before it counts as a completed sale and the decision is auditable.
 - **Transaction check form (what-if + submit)** — fill a form (or "load example fraud"), see risk gauge, reasons, SHAP bars; optionally submit to the chain. *Why:* the simplest way to show the ML working to a non-technical viewer.
 - **Dashboard** — KPI cards, transactions-over-time, fraud by type, region × crop risk heatmap, live feed. *Why:* the "good visualizations" requirement; the first screen the evaluator sees.
-- **Ledger explorer + tamper demo** — chain strip with linked block hashes, block/transaction detail, Verify button, dev-only "tamper with block N" and "reset demo". *Why:* the most memorable moment of a blockchain demo.
+- **Ledger explorer + attack demo** — contract info, live Ethereum blocks with decoded calls/events, Verify against chain, dev-only attacks (2 database edits that Verify catches, 4 on-chain attacks that the contract reverts) and "reset demo" (redeploy). *Why:* the most memorable moment of a blockchain demo.
 - **Live simulator** — Start/Stop streams realistic transactions; buttons inject a chosen fraud type. *Why:* demo without typing; shows the pipeline working continuously.
 - **Batch provenance trace** — pick a batch and see its farm-to-retail timeline with a flag on any suspicious hop. *Why:* the supply-chain half of the title; the agriculture-specific "traceability" story.
 - **Model Insights page** — confusion matrix, ROC/PR curves, feature importance, per-type recall, ablation (rules only vs ML only vs hybrid). *Why:* course-project evaluation is graded on ML rigour. Cheap because it only renders a JSON that training already produces.
@@ -37,14 +37,14 @@ Candidates were brainstormed across core loop, first run, coming back, trust & s
 - **Participant trust score** — rolling score per participant from history (flagged ratio, volume, age) with a radar/gauge. *Why:* cheap given stored data; adds a participant-centric view.
 - **Trade network graph + circular-trading detection** — force-directed graph of who trades with whom; cycles (A→B→C→A on one batch) highlighted using `networkx`. *Why:* the most visually striking agri-fraud pattern (phantom trading rings); stays rule-based, no GNN.
 - **Auditor feedback → retrain** — approve/reject decisions become labels; "Retrain" button re-fits the model and shows before/after metrics. *Why:* human-in-the-loop story; unusual for a course project.
-- **Signed transactions** — each participant has an Ed25519 key pair (server-held demo keys); blocks verify signatures; adds an "identity spoofing / forged signature" scenario. *Why:* real blockchains authenticate senders; adds credibility.
+- **Signed transactions** — each participant has an Ethereum account (server-held demo keys); the seller signs an EIP-712 invoice and the contract verifies it (`InvalidSellerSignature` otherwise); adds an "identity spoofing / forged signature" scenario. *Why:* real blockchains authenticate senders; adds credibility.
 - **Threshold slider** on Model Insights — drag the block threshold, watch precision/recall and confusion matrix update (client-side from stored curve points).
 - **CSV export** of flagged transactions / audit report.
 
 ### Later
-- **Ethereum anchoring** — a tiny `AnchorRegistry.sol` on a local Hardhat node that stores each sealed block's hash. *Build when:* the course rubric requires smart contracts.
-- **Merkle proof visual** — click a transaction, see the proof path to the block root. *Build when:* there is time left and the viva stresses Merkle trees.
-- **Multi-validator approval** (2-of-3 auditors) — *Build when:* instructor wants a consensus discussion beyond PoW.
+- **Public testnet deployment with wallets** — deploy to Sepolia and let participants sign in MetaMask instead of server-held keys. *Build when:* the course wants a public network; the contract and backend already support it via configuration.
+- ~~Merkle proof visual~~ — built with the old hash chain; removed when the ledger moved to Ethereum (Ethereum's own block roots are shown instead).
+- **Multi-validator approval** (2-of-3 auditors in the contract) — *Build when:* instructor wants a consensus/governance discussion.
 - **Import a real public dataset** (e.g. a supply-chain fraud dataset) as a second benchmark — *Build when:* the report needs validation outside synthetic data.
 - **NLP on free-text invoice remarks** with a pretrained Hugging Face zero-shot classifier — *Build when:* the course explicitly asks for an HF/NLP component.
 - **Geographic map heatmap** — *Build when:* region coordinates are worth the map-tile dependency.
@@ -52,7 +52,7 @@ Candidates were brainstormed across core loop, first run, coming back, trust & s
 
 ### Cut (deliberately excluded)
 - **Real authentication & user management** — *Why cut:* accounts add password reset, sessions, roles on every route and privacy obligations; a demo has one user.
-- **Public blockchain / gas / wallets (MetaMask)** — *Why cut:* testnet faucets, wallet flows and network flakiness are demo risks with no ML benefit.
+- **Public blockchain / real gas / wallets (MetaMask)** — *Why cut:* testnet faucets, wallet flows and network flakiness are demo risks with no ML benefit. The local Hardhat node gives the same EVM and transaction model without them.
 - **Multi-node P2P network, Kubernetes, microservices, message queue (Kafka)** — *Why cut:* infrastructure in disguise; one FastAPI process and SQLite handle the load.
 - **Deep learning / LSTM / graph neural networks** — *Why cut:* tabular data of this size is served better by tree models, which are also explainable; GNN needs heavy tooling for no extra demo value.
 - **LLM chatbot / LLM-written explanations** — *Why cut:* AI for its own sake; templated explanations from rules + SHAP are deterministic, free and testable.
@@ -64,10 +64,10 @@ Candidates were brainstormed across core loop, first run, coming back, trust & s
 
 ## 4. User experience
 - **Primary flow (the demo script, ~5 min):**
-  1. Open **Dashboard**; seeded history is already visible. Press **Start simulator** — normal transactions stream in, blocks seal every few seconds.
+  1. Open **Dashboard**; seeded history is already visible. Press **Start simulator** — normal transactions stream in and each is recorded on-chain (one Hardhat block per transaction).
   2. Click **Inject: Phantom quantity**. A red alert appears; the transaction is **Quarantined**.
-  3. Open **Quarantine**; click the item: risk gauge (e.g. 0.91), fraud-type guess, rule reasons ("quantity is 6.2× this farm's maximum plausible output"), SHAP bars. **Reject** with a note — a block records the rejection.
-  4. Open **Ledger**; chain strip is green; **Verify chain** passes. Press **Tamper with block #N** (dev-only). Verify now fails and highlights the exact block and reason (hash/Merkle mismatch). **Reset demo** restores state.
+  3. Open **Quarantine**; click the item: risk gauge (e.g. 0.91), fraud-type guess, rule reasons ("quantity is 6.2× this farm's maximum plausible output"), SHAP bars. **Reject** with a note — the auditor's `resolve()` transaction records the rejection on-chain.
+  4. Open **Ledger**; **Verify against chain** passes. Press **Flip a REJECTED verdict** (database edit): Verify fails and names the transaction. Press **Seller approves their own fraud** (real Ethereum transaction): the EVM reverts it with `AccessControlUnauthorizedAccount`, visible as a red transaction in the block explorer. **Reset demo** redeploys the contract.
   5. Open **Batch Trace**; pick a batch with a circular-trading flag; walk the timeline.
   6. Open **Model Insights**; show ablation (hybrid beats rules-only and ML-only) and per-type recall.
 - **Key screens:**
@@ -76,7 +76,7 @@ Candidates were brainstormed across core loop, first run, coming back, trust & s
   | `/` | Dashboard | KPIs, charts, heatmap, live feed, simulator controls |
   | `/check` | Check Transaction | Form + example loaders → risk gauge, reasons, SHAP, optional commit |
   | `/quarantine` | Quarantine | Review queue with detail drawer and Approve/Reject |
-  | `/ledger` | Ledger Explorer | Block chain strip, block detail, Verify, tamper/reset (dev) |
+  | `/ledger` | Ledger Explorer | Contract info, Ethereum block strip, block detail with decoded calls, Verify against chain, attacks/reset (dev) |
   | `/trace` | Batch Trace | Provenance timeline per batch with flagged hops |
   | `/model` | Model Insights | Evaluation charts, ablation, feature importance |
   | `/network` *(V1)* | Network & Trust | Trade graph, cycles, participant trust cards |
@@ -89,7 +89,7 @@ Candidates were brainstormed across core loop, first run, coming back, trust & s
 | Pretrained model | **None — train small model on synthetic data** | No suitable pretrained tabular agri-fraud model exists; synthetic data gives per-type labels | Hugging Face model: would be a text/vision model forced onto tabular data (see Later for an optional NLP add-on) |
 | Backend | FastAPI + Uvicorn | Same language as ML (no model-serving boundary), auto Swagger UI for demos, Pydantic validation | Node/Express: would need a second service to call Python ML |
 | Database | SQLite via SQLModel | Zero setup, one file, plenty for demo scale; reseedable | Postgres: extra install for no benefit at demo scale |
-| Ledger | Own ~150-line Python module (SHA-256, Merkle root, PoW) persisted in SQLite | Fully understandable for the viva; verification logic is testable | Hyperledger / Ganache / Hardhat in MVP: second language and runtime, flaky demo (Hardhat anchoring is in Later) |
+| Ledger | Solidity 0.8.28 contract (`AgriChainLedger.sol`, OpenZeppelin AccessControl + EIP712 + ECDSA) on a local Hardhat node; backend talks to it with web3.py | A real EVM blockchain the audience can watch; Hardhat is one `npm install`, works offline, instant blocks, free test ETH; same code works on Sepolia | Own Python hash chain (the M2–M8 version: easy to explain but "a simulation"); Ganache (unmaintained); Hyperledger Fabric (heavy, Docker, Go/Java chaincode); public testnet in the demo (faucets, latency) |
 | Frontend | React + TypeScript + Vite | Requested React; Vite is fast and boring; types catch API-shape bugs | Next.js: server-rendering unneeded for a SPA |
 | Styling | Tailwind CSS | Quick to match supplied UI references with utility classes | Component-library lock-in (MUI) fighting the reference designs |
 | Charts | Recharts (+ small custom SVG/CSS for gauge, heatmap, chain strip) | Declarative, covers area/bar/pie/line/radar/scatter | D3 directly: more code for standard charts |
@@ -113,10 +113,10 @@ flowchart LR
     PIPE --> RULES[rules.py]
     PIPE --> ML[RF + IsolationForest<br/>artifacts/model.joblib]
     PIPE --> EXPL[SHAP explain]
-    API --> LEDGER[ledger.py<br/>blocks · Merkle · PoW · verify]
+    API --> LEDGER[chain/ethereum.py<br/>web3 client · verify]
     API --> SIM[sim/generator.py]
     API --> DB[(SQLite)]
-    LEDGER --> DB
+    LEDGER -->|JSON-RPC| ETH[(Ethereum node · Hardhat<br/>AgriChainLedger.sol)]
   end
   TRAIN[scripts/train_model.py] --> ML
   GEN[scripts/generate_dataset.py] --> TRAIN
@@ -124,11 +124,11 @@ flowchart LR
 ```
 
 **Action flow — submit a transaction:** `POST /api/transactions` → validate → load seller/buyer + recent history → `compute_features` → rule engine + RF + IsolationForest → blend into risk → decision:
-- `risk < FLAG_THRESHOLD` → **CLEAR**: goes to the pending pool.
-- `FLAG_THRESHOLD ≤ risk < QUARANTINE_THRESHOLD` → **FLAGGED**: goes to the pending pool *with a flag recorded*.
-- `risk ≥ QUARANTINE_THRESHOLD` → **QUARANTINED**: held out of the pool until an auditor approves (→ pool, flag kept) or rejects (→ recorded in a block as `REJECTED`).
+- `risk < FLAG_THRESHOLD` → **CLEAR**: recorded on-chain as `Committed`.
+- `FLAG_THRESHOLD ≤ risk < QUARANTINE_THRESHOLD` → **FLAGGED**: recorded on-chain as `Flagged`.
+- `risk ≥ QUARANTINE_THRESHOLD` → **QUARANTINED**: recorded on-chain as `PendingReview` until the auditor account calls `resolve()` → `Approved` / `Rejected`.
 
-When the pending pool reaches `BLOCK_SIZE` (default 5) or `POST /api/chain/seal` is called, the ledger builds a block (Merkle root of tx hashes, previous hash, nonce found by PoW at `POW_DIFFICULTY`), stores it, and returns it. Risk blend (starting values, tuned in M1): `risk = 0.60·p_fraud + 0.25·rule_score + 0.15·anomaly_score`, thresholds `FLAG 0.40`, `QUARANTINE 0.70` (0.75 was the starting value; lowered in M1 so injected phantom-quantity cases reach quarantine reliably).
+Recording = the ML oracle account calls `recordTransaction(invoice, sellerSignature, assessment)`; the contract checks the seller's EIP-712 signature and that the id is new. Invoices with an invalid signature are not sent (the contract would revert) and wait in quarantine off-chain. Risk blend (starting values, tuned in M1): `risk = 0.60·p_fraud + 0.25·rule_score + 0.15·anomaly_score`, thresholds `FLAG 0.40`, `QUARANTINE 0.70` (0.75 was the starting value; lowered in M1 so injected phantom-quantity cases reach quarantine reliably).
 
 **Fraud types the generator injects and how they show up** (this table is also the ground truth for labels and explanations):
 | Type | How it is generated | Key signals |
@@ -145,15 +145,16 @@ Realism guards (so the model isn't just learning the generator): overlapping dis
 ### Data model
 | Entity | Key fields |
 |---|---|
-| `Participant` | `id`, `name`, `role` (FARMER/COOP/PROCESSOR/DISTRIBUTOR/RETAILER), `region`, `registered_on`, `land_acres` (farmers), `capacity_tons` (others), `public_key` (V1), `trust_score` (V1) |
+| `Participant` | `id`, `name`, `role` (FARMER/COOP/PROCESSOR/DISTRIBUTOR/RETAILER), `region`, `registered_on`, `land_acres` (farmers), `capacity_tons` (others), `address` (Ethereum), `trust_score` (V1) |
 | `Batch` | `id`, `crop`, `origin_farmer_id`, `harvest_date`, `organic_claimed`, `organic_cert_valid` |
 | `Transaction` | `id`, `tx_hash`, `batch_id`, `stage`, `seller_id`, `buyer_id`, `timestamp`, `quantity_kg`, `unit_price`, `total_value`, `ref_price`, `quality_grade`, `moisture_pct`, `transit_km`, `transit_hours`, `temp_avg_c`, `temp_max_c`, `cold_chain_ok_claimed`, `payment_mode`, `remarks` |
 | `Assessment` (1:1 with Transaction) | `tx_id`, `risk`, `p_fraud`, `rule_score`, `anomaly_score`, `pred_type`, `decision` (CLEAR/FLAGGED/QUARANTINED), `rule_hits` (JSON), `shap_top` (JSON), `model_version` |
 | `Review` | `tx_id`, `action` (APPROVED/REJECTED), `note`, `reviewed_at` |
-| `Block` | `index`, `timestamp`, `prev_hash`, `merkle_root`, `nonce`, `hash`, `difficulty`, `tx_ids` (JSON list) |
-| `LedgerEntry` | `tx_id`, `block_index`, `status` (COMMITTED/FLAGGED/REJECTED) — what the block records for each tx |
+| `LedgerEntry` | `tx_id`, `status`, `record_tx_hash`, `record_block`, `verdict_tx_hash`, `verdict_block` — off-chain mirror of the on-chain record |
+| `AppMeta` | key/value: `schema_version`, `contract_address`, `deploy_tx`, `deploy_block`, `chain_id` |
+| *On-chain* `Record` | `batchId`, `seller`, `buyer`, `dataHash`, `riskBps`, `fraudType`, `status`, `modelVersion`, `recordedAt`, `recordedBlock`, `auditor`, `verdictNoteHash` (contract storage) |
 
-Relationships: Batch 1—* Transaction; Participant 1—* Transaction (as seller and as buyer); Transaction 1—1 Assessment; Transaction 0..1—1 Review; Block 1—* LedgerEntry. `tx_hash` = SHA-256 of a canonical JSON of the transaction's immutable fields **plus its final ledger status**, so editing the DB copy breaks the Merkle root.
+Relationships: Batch 1—* Transaction; Participant 1—* Transaction (as seller and as buyer); Transaction 1—1 Assessment; Transaction 0..1—1 Review; Transaction 0..1—1 LedgerEntry ↔ on-chain Record. `dataHash` = keccak256 of a canonical JSON of the transaction's 21 immutable fields (`SIGNED_FIELDS`), so editing the DB copy no longer matches the contract.
 
 ### Interfaces (REST, all under `/api`)
 | Method & path | Purpose |
@@ -166,14 +167,15 @@ Relationships: Batch 1—* Transaction; Participant 1—* Transaction (as seller
 | `GET /transactions/{id}` | detail incl. assessment, review, block |
 | `GET /quarantine` | queue |
 | `POST /quarantine/{tx_id}/decision` | body `{action: approve\|reject, note}` |
-| `GET /chain/blocks?limit=&before=`, `GET /chain/blocks/{index}` | blocks |
-| `POST /chain/seal` | seal pending pool now |
-| `GET /chain/verify` | recompute hashes/links/Merkle roots; `{valid, first_broken_index, reason}` |
+| `GET /chain/info` | network, contract address, role accounts |
+| `GET /chain/blocks?limit=&before=`, `GET /chain/blocks/{number}` | Ethereum blocks with decoded contract calls |
+| `GET /chain/records/{tx_id}` | the contract's record vs. the off-chain hash |
+| `GET /chain/verify` | every on-chain record vs. the database; `{valid, checked, issues[]}` |
 | `POST /sim/step` | body `{n, inject?: fraud_type}` — generate and submit n transactions (frontend timer calls this) |
 | `GET /batches/{id}/trail` | ordered hops with assessments |
 | `GET /stats/summary`, `/stats/timeseries?bucket=`, `/stats/fraud-by-type`, `/stats/risk-heatmap` | dashboard data |
 | `GET /model/report` | contents of `artifacts/metrics.json` |
-| `POST /dev/tamper`, `POST /dev/reset` | **only when `DEMO_MODE=true`** |
+| `POST /dev/attack`, `POST /dev/reset` | **only when `DEMO_MODE=true`** |
 | `GET /network` *(V1)* | nodes, edges, detected cycles |
 | `POST /model/retrain` *(V1)* | retrain on confirmed labels, return before/after metrics |
 
@@ -195,7 +197,8 @@ agrichain-sentinel/
 │   │   ├── models.py           # SQLModel tables
 │   │   ├── schemas.py          # request/response models
 │   │   ├── routers/            # transactions, quarantine, chain, batches, stats, sim, model, dev
-│   │   ├── chain/ledger.py     # hashing, Merkle, PoW, seal, verify
+│   │   ├── chain/ethereum.py   # web3 client for the AgriChainLedger contract
+│   │   ├── chain/identity.py   # participant accounts, EIP-712 invoice signatures
 │   │   ├── ml/                 # features.py, rules.py, scorer.py, explain.py
 │   │   └── sim/generator.py    # participants, batches, transactions, fraud injection
 │   ├── scripts/                # generate_dataset.py, train_model.py, seed_demo.py
@@ -214,13 +217,14 @@ agrichain-sentinel/
 
 ## 7. Build plan
 
-### Build status (2026-10-28) — final build, all milestones complete
+### Build status (2026-10-28) — final build, all milestones complete + real blockchain
+- **M9 (human-requested): done — real Ethereum ledger.** The custom Python hash chain (`chain/ledger.py`: SHA-256, Merkle, PoW) and Ed25519 signatures were replaced by `blockchain/contracts/AgriChainLedger.sol` (Solidity 0.8.28, OpenZeppelin AccessControl/EIP712/ECDSA) on a local Hardhat node, EIP-712 seller signatures verified in the contract, web3.py in the backend, an Ethereum block explorer and real on-chain attacks on the Ledger page. Approved deviations (the human asked for a working blockchain, not a simulation): stack + `blockchain/` folder, schema v3 (`Block` table removed, `LedgerEntry` mirrors the chain, `participant.address`), hashing format (keccak256 dataHash + EIP-712), new deps `web3` (+ `eth-tester` for tests) replacing `cryptography`, launchers start the node. Tests: 10 contract + 35 backend + 11 frontend.
 - **M1–M6: done.** All "Done when" criteria met; the §4 demo script runs end to end in a headless browser with zero console errors.
-- **M7: done**: participant trust scores + radar, trade-network flow graph with `networkx` cycle detection, threshold slider, Merkle tree visual.
-- **M8: done**: Ed25519 signed transactions (forged-signature hard gate at ingest; signatures re-checked by chain verification, which catches a fully re-mined history rewrite), auditor-feedback retrain with before/after metrics and version history, CSV exports (transactions, audit trail, chain).
-- **From Later, done**: click-to-prove Merkle inclusion proofs on the Ledger page.
+- **M7: done**: participant trust scores + radar, trade-network flow graph with `networkx` cycle detection, threshold slider, Merkle tree visual (Merkle visual superseded by M9).
+- **M8: done**: Ed25519 signed transactions (forged-signature hard gate at ingest; signatures re-checked by chain verification, which catches a fully re-mined history rewrite), auditor-feedback retrain with before/after metrics and version history, CSV exports (transactions, audit trail, chain). Ed25519/hash-chain parts superseded by M9.
+- **From Later, done**: click-to-prove Merkle inclusion proofs on the Ledger page (superseded by M9).
 - **Approved deviations** (the human asked for the complete build without check-ins): the ledger record hash now covers the seller signature; the schema gained `participant.public_key`, `transaction.signature` and an `appmeta` table (old local DBs are re-seeded automatically); new dependency `cryptography`.
-- **Still in Later** (not built): Ethereum anchoring, multi-validator approval, real-dataset benchmark, HF/NLP add-on, map, i18n.
+- **Still in Later** (not built): public testnet deployment with wallets, multi-validator approval, real-dataset benchmark, HF/NLP add-on, map, i18n.
 - Tests: backend 32 (pytest), frontend 11 (Vitest); ruff, Prettier and `tsc` clean; production build OK.
 - Measured: scoring incl. SHAP ≈ 50–75 ms per transaction; seeding 300 tx + 60 blocks ≈ 5 s.
 Milestones are vertical slices; each ends runnable and demoable. Rough effort for 2–3 people: M1 4 d · M2 3 d · M3 3 d · M4 3 d · M5 3 d · M6 3 d.
@@ -231,6 +235,7 @@ Milestones are vertical slices; each ends runnable and demoable. Rough effort fo
 - **Done when:** `python scripts/train_model.py` prints metrics and writes artifacts; per-type recall ≥ 0.80 and PR-AUC ≥ 0.85 on held-out; a test asserts same inputs → same features in generator and serving paths; scoring one transaction takes < 300 ms including SHAP.
 
 ### M2 — Scoring API + Ledger core
+*(Historical: the ledger described in M2/M4 was the original Python hash chain, replaced by the Ethereum contract in M9.)*
 - **Goal:** submit a transaction through Swagger UI and watch it become a mined block.
 - **Tasks:** 1) SQLModel tables + `seed_demo.py` (≈300 history tx / ~60 blocks, a few quarantined items). 2) `chain/ledger.py` (canonical hashing, Merkle root, PoW, seal, verify). 3) Routers: transactions (score/submit/list/detail), quarantine + decision, chain (blocks/seal/verify), dev (tamper/reset). 4) Config thresholds via env.
 - **Done when:** in Swagger UI a clean tx is sealed into a block; a fraud tx lands in `/quarantine`; approving/rejecting seals the right ledger status; `/chain/verify` is valid, then invalid after `/dev/tamper`; pytest covers ledger (tamper at tx, header, link), routing thresholds and decision endpoints.
@@ -270,7 +275,7 @@ Participant trust score, trade network graph with cycle detection, threshold sli
 |---|---|---|---|
 | Model "learns the generator" → unrealistically perfect metrics that a reviewer distrusts | High | High | Overlapping distributions, benign outliers, label noise, shifted test set, honest caveat in report; show ablation, not just one number |
 | Train/serve skew between generator features and DB-built features | Medium | High | Single `compute_features`; test asserting parity; the generator and API both call it |
-| Viva challenge: "this isn't a real blockchain" | Medium | High | README FAQ: what is implemented (hash chain, Merkle, PoW, verification, tamper evidence) and what is not (P2P, multi-node consensus); optional Ethereum anchoring in Later |
+| Viva challenge: "is it a real blockchain?" | Low | High | It is: a Solidity contract on an Ethereum node, watched live in the node's console; FAQ explains local node vs. public network and what is on-chain vs. off-chain |
 | SHAP slow or awkward for multiclass RF | Medium | Medium | Spike in M1: if > 300 ms, cap trees/depth or explain only the predicted-class probability; fall back to global importances × feature deviation |
 | UI references arrive late | Medium | Medium | Neutral Tailwind tokens in one file; build components props-first so restyling is cheap |
 | SQLite locking with polling + simulator | Low | Medium | WAL mode; single Uvicorn worker; short transactions |
@@ -278,4 +283,4 @@ Participant trust score, trade network graph with cycle detection, threshold sli
 | Demo-day failure (no internet, empty DB) | Low | High | Everything local; committed model artifacts; one-command seed/reset; rehearse with the README |
 
 ## 10. Future directions
-Ethereum anchoring and multi-validator approval turn the simulated ledger into a networked one; importing a real public dataset gives external validation; NLP on invoice remarks adds a Hugging Face component; geographic heatmaps and local-language UI broaden the audience. See the **Later** list in §3.
+A public testnet deployment with wallet signing and multi-validator approval turn the local chain into a networked one; importing a real public dataset gives external validation; NLP on invoice remarks adds a Hugging Face component; geographic heatmaps and local-language UI broaden the audience. See the **Later** list in §3.

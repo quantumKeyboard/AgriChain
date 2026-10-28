@@ -1,4 +1,4 @@
-"""Signed transactions, history-rewrite detection, exports, learning loop, schema upgrade."""
+"""EIP-712 signed invoices, forged-invoice handling, exports, learning loop, schema upgrade."""
 
 from app.chain import identity
 
@@ -7,24 +7,49 @@ def legit_example(client) -> dict:
     return client.get("/api/sim/example", params={"type": "none"}).json()["transaction"]
 
 
-def test_sign_and_verify_roundtrip():
+DOMAIN = {"name": "AgriChainLedger", "version": "1", "chainId": 31337,
+          "verifyingContract": "0x5FbDB2315678afecb367f032d93F642f64180aa3"}  # fmt: skip
+
+
+def sample_tx() -> dict:
     tx = {f: 1.0 for f in identity.SIGNED_FIELDS}
-    tx.update(id="TX-1", seller_id="F-001", buyer_id="C-001", timestamp="2026-01-01T00:00:00")
-    sig = identity.sign(tx, "F-001")
-    assert identity.verify(tx, sig, identity.public_key_hex("F-001"))
-    assert not identity.verify(tx, sig, identity.public_key_hex("F-002"))  # wrong key
-    assert not identity.verify({**tx, "quantity_kg": 2.0}, sig, identity.public_key_hex("F-001"))  # edited
-    assert not identity.verify(tx, "", identity.public_key_hex("F-001"))
+    tx.update(id="TX-1", batch_id="B-1", seller_id="F-001", buyer_id="C-001", timestamp="2026-01-01T00:00:00")
+    return tx
 
 
-def test_keys_are_deterministic_and_distinct():
-    assert identity.public_key_hex("F-001") == identity.public_key_hex("F-001")
-    assert identity.public_key_hex("F-001") != identity.public_key_hex("F-002")
+def test_sign_and_verify_roundtrip():
+    tx = sample_tx()
+    sig = identity.sign_invoice(tx, "F-001", DOMAIN)
+    assert identity.verify_invoice(tx, sig, DOMAIN)
+    assert identity.recover_signer(tx, sig, DOMAIN) == identity.address_of("F-001")
+    assert not identity.verify_invoice(tx, identity.sign_invoice(tx, "F-002", DOMAIN), DOMAIN)  # wrong key
+    assert not identity.verify_invoice({**tx, "quantity_kg": 2.0}, sig, DOMAIN)  # edited
+    assert not identity.verify_invoice(tx, sig, {**DOMAIN, "chainId": 1})  # replayed on another chain
+    assert not identity.verify_invoice(tx, "", DOMAIN)
+    assert not identity.verify_invoice(tx, "0x1234", DOMAIN)  # malformed
 
 
-def test_participants_have_registered_keys(client):
+def test_python_digest_matches_the_contract(client, chain):
+    """The EIP-712 digest the backend signs is exactly the one the Solidity contract verifies."""
+    from eth_account.messages import _hash_eip191_message, encode_typed_data
+
+    tx = sample_tx()
+    msg = identity.invoice_message(tx)
+    ours = _hash_eip191_message(encode_typed_data(chain.domain(), identity.INVOICE_TYPES, msg))
+    theirs = chain.contract.functions.invoiceDigest(chain.invoice_tuple(tx)).call()
+    assert ours == theirs
+
+
+def test_addresses_are_deterministic_and_distinct():
+    assert identity.address_of("F-001") == identity.address_of("F-001")
+    assert identity.address_of("F-001") != identity.address_of("F-002")
+
+
+def test_participants_are_registered_on_chain(client, chain):
     p = client.get("/api/participants/F-001").json()
-    assert p["public_key"] == identity.public_key_hex("F-001")
+    assert p["address"] == identity.address_of("F-001")
+    pid, role, active = chain.contract.functions.participants(p["address"]).call()
+    assert identity.from_bytes32(pid) == "F-001" and role == identity.ROLE_CODES["FARMER"] and active
 
 
 def test_transactions_are_signed_and_verified(client):
@@ -41,29 +66,24 @@ def test_forged_signature_is_hard_quarantined(client):
     assert any(h["id"] == "SIGNATURE_INVALID" for h in forged["rule_hits"])
 
 
-def test_sealed_rejected_forgery_keeps_chain_valid(client):
+def test_rejected_forgery_stays_off_chain_and_chain_stays_valid(client):
     r = client.post("/api/sim/step", json={"n": 1, "inject": "forged_signature"}).json()["results"][-1]
     assert r["decision"] == "QUARANTINED" and r["sim_label"] == "Forged signature"
+    assert r["on_chain"] is None  # never sent: the contract would reject the signature
     d = client.post(f"/api/quarantine/{r['tx_id']}/decision", json={"action": "reject", "note": "spoof"})
     assert d.json()["status"] == "REJECTED"
     assert client.get("/api/chain/verify").json()["valid"] is True
 
 
-def test_rewritten_and_remined_history_is_caught_by_signatures(client):
-    t = client.post("/api/dev/tamper", json={"mode": "rewrite"}).json()
-    v = client.get("/api/chain/verify").json()
-    assert v["valid"] is False
-    assert v["first_broken_index"] == t["block_index"]
-    assert "signature" in v["reason"].lower()
-    # Every hash and link was recomputed, so only the signature check can have caught it.
-    others = [b for b in v["blocks"] if b["index"] != t["block_index"]]
-    assert all(b["ok"] for b in others)
-    client.post("/api/dev/reset")
-    assert client.get("/api/chain/verify").json()["valid"] is True
+def test_forged_invoice_cannot_be_approved_onto_the_chain(client):
+    r = client.post("/api/sim/step", json={"n": 1, "inject": "forged_signature"}).json()["results"][-1]
+    assert r["on_chain"] is None
+    d = client.post(f"/api/quarantine/{r['tx_id']}/decision", json={"action": "approve", "note": "x"})
+    assert d.status_code == 409 and "InvalidSellerSignature" in d.json()["detail"]
 
 
 def test_csv_exports(client):
-    for name, first_col in [("transactions.csv", "id"), ("audit.csv", "id"), ("chain.csv", "index")]:
+    for name, first_col in [("transactions.csv", "id"), ("audit.csv", "id"), ("chain.csv", "tx_id")]:
         r = client.get(f"/api/export/{name}")
         assert r.status_code == 200
         assert "attachment" in r.headers["content-disposition"]
@@ -104,4 +124,4 @@ def test_outdated_schema_is_detected(client):
         assert not schema_is_current()
     finally:
         with engine.begin() as conn:
-            conn.execute(text("UPDATE appmeta SET value = '2' WHERE key = 'schema_version'"))
+            conn.execute(text("UPDATE appmeta SET value = '3' WHERE key = 'schema_version'"))

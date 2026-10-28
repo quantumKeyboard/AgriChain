@@ -5,8 +5,14 @@ from __future__ import annotations
 from sqlmodel import Session, select
 
 from app.chain import identity
+from app.chain.ethereum import get_chain
 from app.models import Assessment, LedgerEntry, Participant, Review, Transaction
 from app.sim.generator import FRAUD_LABELS
+
+
+def signature_ok(tx: Transaction) -> bool:
+    """Does the seller's EIP-712 signature still match the stored invoice data?"""
+    return identity.verify_invoice(tx, tx.signature, get_chain().domain())
 
 
 def participants_map(session: Session) -> dict[str, Participant]:
@@ -28,8 +34,9 @@ def tx_view(
     out["seller_role"] = seller.role if seller else None
     out["buyer_role"] = buyer.role if buyer else None
     out["region"] = seller.region if seller else None
-    out["seller_public_key"] = seller.public_key if seller else None
-    out["signature_valid"] = identity.verify(tx, tx.signature, seller.public_key if seller else None)
+    out["seller_address"] = seller.address if seller else None
+    out["data_hash"] = "0x" + identity.data_hash(tx).hex()
+    out["signature_valid"] = signature_ok(tx)
     if a:
         out.update(
             {
@@ -55,8 +62,12 @@ def tx_view(
     else:
         status = "PENDING"
     out["ledger_status"] = status
-    out["block_index"] = entry.block_index if entry else None
-    out["tx_hash"] = entry.tx_hash if entry and entry.tx_hash else None
+    # Where it lives on Ethereum (None = never recorded: the contract would reject its signature).
+    out["on_chain"] = entry is not None
+    out["block_number"] = entry.record_block if entry else None
+    out["eth_tx_hash"] = entry.record_tx_hash if entry else None
+    out["verdict_block"] = entry.verdict_block if entry else None
+    out["verdict_tx_hash"] = entry.verdict_tx_hash if entry else None
     out["review"] = rev.model_dump() if rev else None
     out["sim_label_display"] = FRAUD_LABELS.get(tx.sim_label) if tx.sim_label else None
     return out

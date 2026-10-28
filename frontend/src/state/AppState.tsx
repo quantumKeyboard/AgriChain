@@ -78,13 +78,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
               body: `${r.sim_label} · ${r.tx_id}`,
             });
         }
-        const sealed = res.results.flatMap((r) => r.sealed_blocks);
-        if (sealed.length && !inject)
-          pushToast({
-            tone: "ok",
-            title: `Block #${sealed[sealed.length - 1]} mined`,
-            body: "Proof-of-work found",
-          });
         setLastError(null);
         refresh();
       } catch (e) {

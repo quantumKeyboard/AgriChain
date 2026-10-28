@@ -17,7 +17,19 @@ os.environ["ARTIFACTS_DIR"] = str(_ART)
 
 
 @pytest.fixture(scope="session")
-def client():
+def chain():
+    """The real AgriChainLedger bytecode, deployed on an in-process EVM (eth-tester / py-evm)."""
+    from web3 import EthereumTesterProvider, Web3
+
+    from app.chain.ethereum import Chain, set_chain
+
+    c = Chain(w3=Web3(EthereumTesterProvider()))
+    set_chain(c)
+    return c
+
+
+@pytest.fixture(scope="session")
+def client(chain):
     from fastapi.testclient import TestClient
     from sqlmodel import Session
 

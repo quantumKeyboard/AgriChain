@@ -1,4 +1,6 @@
-"""Reset the database and seed a realistic demo history (participants, transactions, blocks)."""
+"""Reset the database, deploy a fresh AgriChainLedger contract and seed a demo history on it.
+
+Needs the Ethereum node running (`npm run node` in blockchain/)."""
 
 import sys
 from pathlib import Path

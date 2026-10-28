@@ -76,13 +76,13 @@ describe("format helpers", () => {
 });
 
 describe("SignatureLine", () => {
-  const base = { signature: "ab".repeat(32), seller_public_key: "cd".repeat(16) } as const;
+  const base = { signature: "ab".repeat(32), seller_address: "0x" + "cd".repeat(20) } as const;
   it("shows a valid seller signature", () => {
     render(<SignatureLine tx={{ ...base, signature_valid: true } as unknown as TxView} />);
-    expect(screen.getByText(/Seller signature valid/)).toBeInTheDocument();
+    expect(screen.getByText(/EIP-712 signature valid/)).toBeInTheDocument();
   });
   it("flags a signature that does not match the seller key", () => {
     render(<SignatureLine tx={{ ...base, signature_valid: false } as unknown as TxView} />);
-    expect(screen.getByText(/does NOT match/)).toBeInTheDocument();
+    expect(screen.getByText(/does NOT come from/)).toBeInTheDocument();
   });
 });

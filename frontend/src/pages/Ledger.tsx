@@ -1,31 +1,45 @@
 import {
   AlertOctagon,
+  Ban,
   Boxes,
+  Database,
   Download,
+  FileSignature,
+  FileCode2,
   Hammer,
   KeyRound,
   Link2,
   RotateCcw,
   ShieldCheck,
   Skull,
+  UserX,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, exportUrl } from "../api/client";
-import { useBlock, useBlocks, useHealth, useRefreshAll, useVerify } from "../api/hooks";
-import type { VerifyResult } from "../api/types";
+import { useBlock, useBlocks, useChainInfo, useHealth, useRefreshAll, useVerify } from "../api/hooks";
+import type { AttackKind, AttackResult, EthTx, VerifyResult } from "../api/types";
 import { TxDrawer } from "../components/TxDrawer";
 import { Card, CardTitle, ErrorBox, Loading, PageTitle, StatusBadge } from "../components/ui";
-import { CROP_EMOJI, clock, inrCompact, shortHash } from "../lib/format";
-import { C, STATUS_COLOR } from "../lib/tokens";
+import { CROP_EMOJI, ethShort, inrCompact, num, unixClock } from "../lib/format";
+import { C } from "../lib/tokens";
 import { useApp } from "../state/AppState";
+
+const PROBLEM_LABEL: Record<string, string> = {
+  DATA_MISMATCH: "Invoice data edited",
+  BAD_SIGNATURE: "Seller signature broken",
+  STATUS_MISMATCH: "Verdict / status edited",
+  MISSING_OFF_CHAIN: "Row deleted from database",
+  NOT_ON_CHAIN: "Fake on-chain claim",
+};
 
 export default function Ledger() {
   const [params, setParams] = useSearchParams();
-  const { data, isLoading, error, refetch } = useBlocks(60);
+  const { data, isLoading, error, refetch } = useBlocks(40);
   const verify = useVerify();
   const [vr, setVr] = useState<VerifyResult | null>(null);
-  const selected = params.get("block") !== null ? Number(params.get("block")) : (data?.height ?? null);
+  const selected = params.get("block") !== null ? Number(params.get("block")) : (data?.head ?? null);
   const [openTx, setOpenTx] = useState<string | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);
 
@@ -44,157 +58,84 @@ export default function Ledger() {
 
   const runVerify = async () => setVr(await verify.mutateAsync());
 
-  // Re-verify automatically when the chain changes and a result is showing.
+  // Re-verify automatically when new blocks arrive and a result is showing.
   useEffect(() => {
     if (vr) runVerify();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.height]);
-
-  const brokenFrom = vr && !vr.valid ? vr.first_broken_index : null;
-  const blockState = (i: number) => {
-    if (!vr) return "unknown";
-    const r = vr.blocks.find((b) => b.index === i);
-    if (r && !r.ok) return "broken";
-    if (brokenFrom !== null && i > brokenFrom) return "unverified";
-    return "ok";
-  };
+  }, [data?.head]);
 
   return (
     <>
       <PageTitle
         title="Ledger"
-        sup={data ? `#${data.height}` : undefined}
-        sub="A SHA-256 hash chain: each block stores the Merkle root of its transaction records and the previous block's hash, sealed by proof-of-work."
+        sup={data ? `#${data.head}` : undefined}
+        sub="A Solidity smart contract on a real Ethereum node. The ML oracle records every screened transaction on-chain; auditors' verdicts are on-chain transactions too. Records are write-once."
       />
       <div className="grid gap-5 xl:grid-cols-12">
-        <Card className="self-start xl:col-span-8">
-          <CardTitle
-            title="Chain"
-            sub={
-              data
-                ? `${data.height + 1} blocks · ${data.pending} tx waiting in mempool · difficulty ${data.difficulty} (hash starts with ${"0".repeat(data.difficulty ?? 0)})`
-                : undefined
-            }
-            right={
-              <div className="flex items-center gap-2">
-                <a
-                  href={exportUrl("chain.csv")}
-                  className="btn-ghost flex items-center gap-1.5 px-3 py-2 text-xs"
-                  title="Download all block headers as CSV"
-                >
-                  <Download size={14} /> CSV
-                </a>
-                <button
-                  onClick={runVerify}
-                  disabled={verify.isPending}
-                  className="btn-gold flex items-center gap-1.5 px-4 py-2 text-sm"
-                >
-                  <ShieldCheck size={15} /> {verify.isPending ? "Verifying…" : "Verify chain"}
-                </button>
-              </div>
-            }
-          />
-          {vr && (
-            <div
-              role="status"
-              className={`mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ${
-                vr.valid
-                  ? "border-clear/50 bg-clear/10 text-clear-ink"
-                  : "border-quar/60 bg-quar/10 text-quar-ink"
-              }`}
-            >
-              {vr.valid ? (
-                <ShieldCheck size={18} className="shrink-0" />
-              ) : (
-                <AlertOctagon size={18} className="shrink-0" />
-              )}
-              <div>
-                <p className="font-semibold">
-                  {vr.valid
-                    ? `Chain intact — all ${vr.blocks_checked} blocks verified`
-                    : `Tampering detected in block #${vr.first_broken_index}`}
-                </p>
-                <p className="mt-0.5 text-xs opacity-90">
-                  {vr.valid
-                    ? "Every transaction hash, Merkle root, proof-of-work and previous-hash link was recomputed from the database and matches."
-                    : `${vr.reason} Every block after it builds on altered history, so it can't be trusted either.`}
-                </p>
-              </div>
-            </div>
-          )}
-          {isLoading ? (
-            <Loading />
-          ) : error ? (
-            <ErrorBox error={error} onRetry={refetch} />
-          ) : (
-            <div ref={stripRef} className="scroll-thin flex items-center gap-1 overflow-x-auto pb-3">
-              {data!.blocks
-                .slice()
-                .reverse()
-                .map((b, i, arr) => {
-                  const st = blockState(b.index);
-                  const sel = b.index === selected;
-                  const border =
-                    st === "broken" ? C.quar : st === "unverified" ? "#6b2a2e" : sel ? C.gold : C.line;
-                  return (
-                    <div key={b.index} className="flex shrink-0 items-center gap-1">
-                      <button
-                        data-block={b.index}
-                        onClick={() => setParams({ block: String(b.index) })}
-                        className="flex w-[92px] flex-col gap-1.5 rounded-2xl border bg-panel-2 p-2.5 text-left transition hover:brightness-125"
-                        style={{ borderColor: border, boxShadow: sel ? `0 0 0 1px ${border}` : undefined }}
-                        title={`Block #${b.index}\n${b.hash}`}
-                      >
-                        <span className="flex items-center justify-between">
-                          <span className="tnum text-xs font-semibold text-ink">#{b.index}</span>
-                          {st === "broken" ? (
-                            <Skull size={12} className="text-quar-ink" />
-                          ) : st === "ok" ? (
-                            <ShieldCheck size={12} className="text-clear-ink" />
-                          ) : (
+        <div className="space-y-5 xl:col-span-8">
+          <ContractCard vr={vr} verifying={verify.isPending} onVerify={runVerify} onOpenTx={setOpenTx} />
+          <Card>
+            <CardTitle
+              title="Ethereum blocks"
+              sub="Newest on the right · each block links to its parent hash · dot = transaction (green success, red reverted)"
+            />
+            {isLoading ? (
+              <Loading />
+            ) : error ? (
+              <ErrorBox error={error} onRetry={refetch} />
+            ) : (
+              <div ref={stripRef} className="scroll-thin flex items-center gap-1 overflow-x-auto pb-3">
+                {data!.blocks
+                  .slice()
+                  .reverse()
+                  .map((b, i, arr) => {
+                    const sel = b.number === selected;
+                    const reverted = b.transactions.some((t) => t.status === "reverted");
+                    const border = sel ? C.gold : reverted ? C.quar : C.line;
+                    const fn = b.transactions[0]?.function ?? "genesis";
+                    return (
+                      <div key={b.number} className="flex shrink-0 items-center gap-1">
+                        <button
+                          data-block={b.number}
+                          onClick={() => setParams({ block: String(b.number) })}
+                          className="flex w-[104px] flex-col gap-1.5 rounded-2xl border bg-panel-2 p-2.5 text-left transition hover:brightness-125"
+                          style={{ borderColor: border, boxShadow: sel ? `0 0 0 1px ${border}` : undefined }}
+                          title={`Block #${b.number}\n${b.hash}`}
+                        >
+                          <span className="flex items-center justify-between">
+                            <span className="tnum text-xs font-semibold text-ink">#{b.number}</span>
                             <Boxes size={12} className="text-muted" />
-                          )}
-                        </span>
-                        <span className="font-mono text-[9px] text-muted">{b.hash.slice(0, 8)}</span>
-                        <span className="flex gap-[2px]" aria-label={`${b.tx_count} transactions`}>
-                          {Object.entries(b.status_counts).flatMap(([s, n]) =>
-                            Array.from({ length: n }).map((_, k) => (
+                          </span>
+                          <span className="font-mono text-[9px] text-muted">{b.hash.slice(0, 10)}</span>
+                          <span className="truncate text-[9px] text-ink-2">{fn}</span>
+                          <span className="flex gap-[3px]" aria-label={`${b.tx_count} transactions`}>
+                            {b.transactions.map((t) => (
                               <span
-                                key={s + k}
+                                key={t.hash}
                                 className="h-1.5 flex-1 rounded-full"
-                                style={{ background: STATUS_COLOR[s] }}
+                                style={{ background: t.status === "success" ? C.clear : C.quar }}
                               />
-                            )),
-                          )}
-                          {b.tx_count === 0 && <span className="text-[9px] text-muted">genesis</span>}
-                        </span>
-                      </button>
-                      {i < arr.length - 1 && (
-                        <Link2
-                          size={12}
-                          className={
-                            brokenFrom !== null && b.index >= brokenFrom ? "text-quar" : "text-muted"
-                          }
-                          aria-hidden
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-          <p className="text-[11px] text-muted">
-            Bars inside each block: one per transaction record ·{" "}
-            <span className="text-clear-ink">committed/approved</span> ·{" "}
-            <span className="text-flag-ink">flagged</span> · <span className="text-quar-ink">rejected</span>.
-            Showing the latest 60 blocks.
-          </p>
-        </Card>
+                            ))}
+                            {b.tx_count === 0 && <span className="text-[9px] text-muted">empty</span>}
+                          </span>
+                        </button>
+                        {i < arr.length - 1 && <Link2 size={12} className="text-muted" aria-hidden />}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+            <p className="text-[11px] text-muted">
+              Hardhat mines one block per transaction (automine). Bulk history was recorded with{" "}
+              <span className="font-mono">recordTransactions</span> (25 invoices per Ethereum transaction).
+            </p>
+          </Card>
+        </div>
 
         <DemoPanel onDone={() => setVr(null)} onVerify={runVerify} />
 
         <div className="xl:col-span-12">
-          {selected !== null && <BlockPanel index={selected} onOpenTx={setOpenTx} />}
+          {selected !== null && <BlockPanel number={selected} onOpenTx={setOpenTx} />}
         </div>
       </div>
       <TxDrawer id={openTx} onClose={() => setOpenTx(null)} />
@@ -202,12 +143,186 @@ export default function Ledger() {
   );
 }
 
+function ContractCard({
+  vr,
+  verifying,
+  onVerify,
+  onOpenTx,
+}: {
+  vr: VerifyResult | null;
+  verifying: boolean;
+  onVerify: () => void;
+  onOpenTx: (id: string) => void;
+}) {
+  const { data: info, isLoading, error, refetch } = useChainInfo();
+  return (
+    <Card>
+      <CardTitle
+        title="AgriChainLedger contract"
+        sub={info ? `${info.network} · chain id ${info.chain_id} · ${info.client}` : undefined}
+        right={
+          <div className="flex items-center gap-2">
+            <a
+              href={exportUrl("chain.csv")}
+              className="btn-ghost flex items-center gap-1.5 px-3 py-2 text-xs"
+              title="Download every on-chain record (read live from the contract) as CSV"
+            >
+              <Download size={14} /> CSV
+            </a>
+            <button
+              onClick={onVerify}
+              disabled={verifying}
+              className="btn-gold flex items-center gap-1.5 px-4 py-2 text-sm"
+            >
+              <ShieldCheck size={15} /> {verifying ? "Verifying…" : "Verify against chain"}
+            </button>
+          </div>
+        }
+      />
+      {vr && <VerifyBanner vr={vr} onOpenTx={onOpenTx} />}
+      {isLoading ? (
+        <Loading />
+      ) : error || !info ? (
+        <ErrorBox error={error} onRetry={refetch} />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          <dl className="space-y-2.5 text-xs">
+            <HashRow k="Contract address" v={info.contract_address ?? "—"} gold />
+            <HashRow k="Deployed in transaction" v={info.deploy_tx ?? "—"} />
+            <div className="grid grid-cols-3 gap-2">
+              <Mini k="Block height" v={num(info.block_number)} />
+              <Mini k="Records" v={num(info.record_count)} />
+              <Mini k="Deploy block" v={`#${info.deploy_block}`} />
+            </div>
+            <p className="flex items-center gap-1.5 text-[11px] text-muted">
+              <FileCode2 size={13} className="text-gold" /> {info.solidity}
+            </p>
+          </dl>
+          <div>
+            <p className="mb-2 text-[10px] uppercase tracking-wider text-muted">
+              Accounts acting on the contract
+            </p>
+            <ul className="space-y-1.5">
+              {info.accounts.map((a) => (
+                <li key={a.address} className="card-inner flex items-center justify-between gap-2 px-3 py-2">
+                  <span className="min-w-0">
+                    <span className="block text-xs text-ink">{a.role}</span>
+                    <span className="block truncate font-mono text-[10px] text-muted" title={a.address}>
+                      {a.address}
+                    </span>
+                  </span>
+                  <span className="tnum shrink-0 text-[11px] text-ink-2">{a.balance_eth.toFixed(3)} ETH</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[11px] text-muted">
+              Every participant also has its own Ethereum address and signs its invoices (EIP-712); the
+              contract checks that signature before recording anything.
+            </p>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function VerifyBanner({ vr, onOpenTx }: { vr: VerifyResult; onOpenTx: (id: string) => void }) {
+  return (
+    <div
+      role="status"
+      className={`mb-4 rounded-2xl border px-4 py-3 text-sm ${
+        vr.valid ? "border-clear/50 bg-clear/10 text-clear-ink" : "border-quar/60 bg-quar/10 text-quar-ink"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        {vr.valid ? (
+          <ShieldCheck size={18} className="shrink-0" />
+        ) : (
+          <AlertOctagon size={18} className="shrink-0" />
+        )}
+        <div>
+          <p className="font-semibold">
+            {vr.valid
+              ? `Database matches the blockchain — all ${vr.checked} on-chain records verified`
+              : `Tampering detected — ${vr.issues.length} mismatch${vr.issues.length === 1 ? "" : "es"} with the blockchain`}
+          </p>
+          <p className="mt-0.5 text-xs opacity-90">
+            {vr.valid
+              ? `Each record was read back from the contract at block #${vr.block_number}: data hash, status and the seller's signature all match the off-chain copy. ${vr.off_chain_only} forged invoice(s) were never allowed on-chain.`
+              : "The smart contract still holds the original data hash and status, so any edit to the off-chain database shows up here."}
+          </p>
+        </div>
+      </div>
+      {!vr.valid && (
+        <ul className="mt-3 space-y-1.5">
+          {vr.issues.slice(0, 8).map((i) => (
+            <li key={i.tx_id + i.problem}>
+              <button
+                onClick={() => onOpenTx(i.tx_id)}
+                className="flex w-full flex-wrap items-baseline gap-x-2 rounded-xl bg-quar/10 px-3 py-1.5 text-left text-xs hover:bg-quar/20"
+              >
+                <span className="font-mono text-ink">{i.tx_id}</span>
+                <span className="font-semibold">{PROBLEM_LABEL[i.problem] ?? i.problem}</span>
+                {i.block !== null && <span className="text-muted">block #{i.block}</span>}
+                <span className="w-full text-[11px] opacity-90">{i.detail}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const DB_ATTACKS: { kind: AttackKind; icon: React.ReactNode; title: string; body: string }[] = [
+  {
+    kind: "db_quantity",
+    icon: <Hammer size={15} />,
+    title: "Inflate a recorded quantity ×10",
+    body: "A trader edits a past invoice in SQLite to claim more goods.",
+  },
+  {
+    kind: "db_verdict",
+    icon: <Skull size={15} />,
+    title: "Flip a REJECTED verdict to APPROVED",
+    body: "A corrupt insider erases an auditor's rejection in the database.",
+  },
+];
+
+const CHAIN_ATTACKS: { kind: AttackKind; icon: React.ReactNode; title: string; body: string }[] = [
+  {
+    kind: "chain_overwrite",
+    icon: <Database size={15} />,
+    title: "Overwrite an on-chain record",
+    body: "The oracle re-records an existing transaction with a ×10 quantity.",
+  },
+  {
+    kind: "chain_unauthorized",
+    icon: <UserX size={15} />,
+    title: "Seller approves their own fraud",
+    body: "A seller calls resolve() on their rejected invoice from their own wallet.",
+  },
+  {
+    kind: "chain_reverdict",
+    icon: <Ban size={15} />,
+    title: "Change a final verdict",
+    body: "Even the auditor tries to turn REJECTED into APPROVED.",
+  },
+  {
+    kind: "chain_forged",
+    icon: <FileSignature size={15} />,
+    title: "Record a forged invoice",
+    body: "An invoice in a farmer's name, signed with another participant's key.",
+  },
+];
+
 function DemoPanel({ onDone, onVerify }: { onDone: () => void; onVerify: () => Promise<void> }) {
   const { data: health } = useHealth();
   const refresh = useRefreshAll();
   const { pushToast, setRunning } = useApp();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<unknown>(null);
+  const [last, setLast] = useState<AttackResult | null>(null);
   const [, setParams] = useSearchParams();
   if (!health?.demo_mode) return null;
 
@@ -223,68 +338,94 @@ function DemoPanel({ onDone, onVerify }: { onDone: () => void; onVerify: () => P
     }
   };
 
-  const tamper = (mode: "quantity" | "verdict" | "header" | "rewrite") =>
-    run(mode, async () => {
-      const r = await api.post<{ block_index: number; change: string; tx_id?: string }>("/dev/tamper", {
-        mode,
-      });
-      pushToast({ tone: "danger", title: `Insider edit in block #${r.block_index}`, body: r.change });
-      setParams({ block: String(r.block_index) });
+  const attack = (kind: AttackKind) =>
+    run(kind, async () => {
+      const r = await api.post<AttackResult>("/dev/attack", { kind });
+      setLast(r);
       refresh();
-      await onVerify();
+      if (r.revert) {
+        pushToast({ tone: "ok", title: `Reverted by the EVM: ${r.revert.error}`, body: r.change });
+        setParams({ block: String(r.revert.block) });
+      } else {
+        pushToast({ tone: "danger", title: "Database edited behind the chain's back", body: r.change });
+        await onVerify();
+      }
     });
+
+  const btn = (a: (typeof DB_ATTACKS)[number]) => (
+    <DemoButton key={a.kind} {...a} onClick={() => attack(a.kind)} busy={busy === a.kind} disabled={!!busy} />
+  );
 
   return (
     <Card className="self-start xl:col-span-4">
-      <CardTitle title="Attack simulation" sub="Demo mode: edit the database behind the ledger's back" />
-      <div className="space-y-2">
-        <DemoButton
-          icon={<Hammer size={15} />}
-          title="Inflate a sealed quantity ×10"
-          body="A trader edits a past invoice to claim more goods."
-          onClick={() => tamper("quantity")}
-          busy={busy === "quantity"}
-        />
-        <DemoButton
-          icon={<Skull size={15} />}
-          title="Flip a REJECTED fraud verdict"
-          body="A corrupt insider erases an auditor's rejection."
-          onClick={() => tamper("verdict")}
-          busy={busy === "verdict"}
-        />
-        <DemoButton
-          icon={<Boxes size={15} />}
-          title="Edit a block header (nonce)"
-          body="Breaks the proof-of-work / header hash."
-          onClick={() => tamper("header")}
-          busy={busy === "header"}
-        />
-        <DemoButton
-          icon={<KeyRound size={15} />}
-          title="Rewrite history and re-mine"
-          body="Edit a record, recompute every hash and redo the proof-of-work. Only signatures catch it."
-          onClick={() => tamper("rewrite")}
-          busy={busy === "rewrite"}
-        />
-        <button
-          onClick={() =>
-            run("reset", async () => {
-              setRunning(false);
-              await api.post("/dev/reset");
-              onDone();
-              setParams({});
-              refresh();
-              pushToast({ tone: "ok", title: "Demo reset", body: "Fresh history re-seeded and re-mined." });
-            })
-          }
-          disabled={!!busy}
-          className="btn-ghost mt-2 flex w-full items-center justify-center gap-2 py-2.5 text-sm"
-        >
-          <RotateCcw size={14} /> {busy === "reset" ? "Re-seeding…" : "Reset demo data"}
-        </button>
-        {err !== null && <ErrorBox error={err} />}
-      </div>
+      <CardTitle title="Attack simulation" sub="Demo mode: every attack really runs" />
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        Off-chain — edit the database
+      </p>
+      <div className="space-y-2">{DB_ATTACKS.map(btn)}</div>
+      <p className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-muted">
+        On-chain — send a real Ethereum transaction
+      </p>
+      <div className="space-y-2">{CHAIN_ATTACKS.map(btn)}</div>
+      {last && <AttackOutcome r={last} />}
+      <button
+        onClick={() =>
+          run("reset", async () => {
+            setRunning(false);
+            await api.post("/dev/reset");
+            setLast(null);
+            onDone();
+            setParams({});
+            refresh();
+            pushToast({
+              tone: "ok",
+              title: "Demo reset",
+              body: "Fresh contract deployed and history re-recorded on-chain.",
+            });
+          })
+        }
+        disabled={!!busy}
+        className="btn-ghost mt-3 flex w-full items-center justify-center gap-2 py-2.5 text-sm"
+      >
+        <RotateCcw size={14} />{" "}
+        {busy === "reset" ? "Deploying & re-seeding…" : "Reset demo (redeploy contract)"}
+      </button>
+      {err !== null && (
+        <div className="mt-2">
+          <ErrorBox error={err} />
+        </div>
+      )}
     </Card>
+  );
+}
+
+function AttackOutcome({ r }: { r: AttackResult }) {
+  const reverted = r.result === "reverted";
+  return (
+    <div
+      className={`mt-4 rounded-2xl border px-3 py-2.5 text-xs ${
+        reverted ? "border-clear/50 bg-clear/10 text-clear-ink" : "border-quar/60 bg-quar/10 text-quar-ink"
+      }`}
+    >
+      <p className="flex items-center gap-1.5 font-semibold">
+        {reverted ? <XCircle size={14} /> : <AlertOctagon size={14} />}
+        {reverted ? `Transaction reverted: ${r.revert!.error}` : "Edit accepted by the database"}
+      </p>
+      <p className="mt-1 text-ink-2">{r.change}</p>
+      {reverted && (
+        <dl className="mt-1.5 space-y-0.5 font-mono text-[10px] text-muted">
+          {Object.entries(r.revert!.args).map(([k, v]) => (
+            <div key={k} className="truncate" title={String(v)}>
+              {k}: <span className="text-ink-2">{String(v)}</span>
+            </div>
+          ))}
+          <div className="truncate" title={r.revert!.tx_hash}>
+            tx: {ethShort(r.revert!.tx_hash, 10)} · block #{r.revert!.block} · status 0
+          </div>
+        </dl>
+      )}
+      <p className="mt-1.5 opacity-90">{r.explain}</p>
+    </div>
   );
 }
 
@@ -294,18 +435,20 @@ function DemoButton({
   body,
   onClick,
   busy,
+  disabled,
 }: {
   icon: React.ReactNode;
   title: string;
   body: string;
   onClick: () => void;
   busy: boolean;
+  disabled: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      disabled={busy}
-      className="card-inner flex w-full items-start gap-3 p-3 text-left transition hover:border-quar/60"
+      disabled={disabled}
+      className="card-inner flex w-full items-start gap-3 p-3 text-left transition hover:border-quar/60 disabled:opacity-60"
     >
       <span className="mt-0.5 text-quar-ink">{icon}</span>
       <span>
@@ -316,10 +459,8 @@ function DemoButton({
   );
 }
 
-function BlockPanel({ index, onOpenTx }: { index: number; onOpenTx: (id: string) => void }) {
-  const { data: b, isLoading, error, refetch } = useBlock(index);
-  const [proofPos, setProofPos] = useState<number | null>(null);
-  useEffect(() => setProofPos(null), [index]);
+function BlockPanel({ number, onOpenTx }: { number: number; onOpenTx: (id: string) => void }) {
+  const { data: b, isLoading, error, refetch } = useBlock(number);
   if (isLoading)
     return (
       <Card>
@@ -330,111 +471,116 @@ function BlockPanel({ index, onOpenTx }: { index: number; onOpenTx: (id: string)
   return (
     <div className="grid gap-5 lg:grid-cols-12">
       <Card className="lg:col-span-5">
-        <CardTitle
-          title={`Block #${b.index}`}
-          sub={clock(b.timestamp)}
-          right={
-            <span
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${
-                b.valid
-                  ? "border-clear/50 bg-clear/15 text-clear-ink"
-                  : "border-quar/50 bg-quar/15 text-quar-ink"
-              }`}
-            >
-              {b.valid ? <ShieldCheck size={13} /> : <AlertOctagon size={13} />}{" "}
-              {b.valid ? "Valid" : "Invalid"}
-            </span>
-          }
-        />
-        {!b.valid && (
-          <p className="mb-3 rounded-2xl bg-quar/10 px-3 py-2 text-xs text-quar-ink">{b.reason}</p>
-        )}
+        <CardTitle title={`Block #${b.number}`} sub={unixClock(b.timestamp)} />
         <dl className="space-y-2.5 text-xs">
           <HashRow k="Block hash" v={b.hash} gold />
-          <HashRow k="Previous hash" v={b.prev_hash} />
-          <HashRow k="Merkle root" v={b.merkle_root} />
+          <HashRow k="Parent hash" v={b.parent_hash} />
+          <HashRow k="State root" v={b.state_root} />
+          <HashRow k="Transactions root" v={b.transactions_root} />
+          <HashRow k="Receipts root" v={b.receipts_root} />
           <div className="grid grid-cols-3 gap-2">
-            <Mini k="Nonce" v={b.nonce.toLocaleString()} />
-            <Mini k="Difficulty" v={String(b.difficulty)} />
-            <Mini k="Records" v={String(b.tx_count)} />
+            <Mini k="Transactions" v={String(b.transactions.length)} />
+            <Mini k="Gas used" v={num(b.gas_used)} />
+            <Mini k="Gas limit" v={`${(b.gas_limit / 1e6).toFixed(0)} M`} />
           </div>
         </dl>
-        {b.entries.length > 0 && (
-          <MerkleTree
-            leaves={b.entries.map((e) => e.recomputed_hash ?? e.tx_hash)}
-            root={b.merkle_root}
-            highlight={proofPos}
-            label={proofPos !== null ? b.entries[proofPos]?.tx?.id : undefined}
-          />
-        )}
       </Card>
       <Card className="lg:col-span-7">
         <CardTitle
-          title="Transaction records"
-          sub="Stored hash vs. recomputed hash, and the seller's signature · Prove = Merkle inclusion proof"
+          title="Transactions in this block"
+          sub="Decoded with the contract ABI: function called, who signed it, emitted events"
         />
-        {b.entries.length === 0 ? (
-          <p className="text-sm text-muted">Genesis block — no transactions.</p>
+        {b.transactions.length === 0 ? (
+          <p className="text-sm text-muted">No transactions in this block.</p>
         ) : (
           <ul className="space-y-2">
-            {b.entries.map((e) => (
-              <li
-                key={e.position}
-                className={`card-inner p-3 transition hover:border-gold/50 ${e.tampered ? "!border-quar" : ""}`}
-              >
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={() => e.tx && onOpenTx(e.tx.id)}
-                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                    title="Open transaction details"
-                  >
-                    <span className="text-xl" aria-hidden>
-                      {e.tx ? CROP_EMOJI[e.tx.crop] : "?"}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-mono text-xs text-ink">{e.tx?.id}</span>
-                      <span className="block truncate text-[11px] text-muted">
-                        {e.tx?.seller_name} → {e.tx?.buyer_name} · {e.tx ? inrCompact(e.tx.total_value) : ""}
-                      </span>
-                    </span>
-                  </button>
-                  <StatusBadge status={e.status} small />
-                  <button
-                    onClick={() => setProofPos(proofPos === e.position ? null : e.position)}
-                    aria-pressed={proofPos === e.position}
-                    title="Show the Merkle inclusion proof for this record"
-                    className={`pill border px-2 py-0.5 text-[10px] font-medium ${
-                      proofPos === e.position
-                        ? "border-gold bg-gold text-gold-ink"
-                        : "border-line text-ink-2 hover:border-gold"
-                    }`}
-                  >
-                    Prove
-                  </button>
-                </div>
-                <div className="mt-2 grid gap-1 font-mono text-[10px]">
-                  <span className="text-muted">stored&nbsp;&nbsp;&nbsp;&nbsp;{shortHash(e.tx_hash, 20)}</span>
-                  <span className={e.recomputed_hash !== e.tx_hash ? "text-quar-ink" : "text-clear-ink"}>
-                    recomputed {shortHash(e.recomputed_hash, 20)}{" "}
-                    {e.recomputed_hash !== e.tx_hash ? "✗ MISMATCH" : "✓ matches"}
-                  </span>
-                  {e.tx && (
-                    <span className={e.tx.signature_valid ? "text-clear-ink" : "text-quar-ink"}>
-                      signature&nbsp;{" "}
-                      {e.tx.signature_valid
-                        ? "✓ valid for seller's key"
-                        : e.status === "REJECTED"
-                          ? "✗ forged (sealed as rejected evidence)"
-                          : "✗ INVALID"}
-                    </span>
-                  )}
-                </div>
-              </li>
+            {b.transactions.map((t) => (
+              <EthTxRow key={t.hash} t={t} />
             ))}
           </ul>
         )}
+        {b.records.length > 0 && (
+          <>
+            <p className="mb-2 mt-5 text-[11px] uppercase tracking-wider text-muted">
+              Supply-chain records touched ({b.records.length})
+            </p>
+            <ul className="scroll-thin max-h-[360px] space-y-1.5 overflow-y-auto pr-1">
+              {b.records.map((tx) => (
+                <li key={tx.id}>
+                  <button
+                    onClick={() => onOpenTx(tx.id)}
+                    className="card-inner flex w-full items-center gap-3 p-2.5 text-left transition hover:border-gold/50"
+                    title="Open transaction details"
+                  >
+                    <span className="text-lg" aria-hidden>
+                      {CROP_EMOJI[tx.crop]}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-mono text-xs text-ink">{tx.id}</span>
+                      <span className="block truncate text-[11px] text-muted">
+                        {tx.seller_name} → {tx.buyer_name} · {inrCompact(tx.total_value)}
+                      </span>
+                    </span>
+                    <StatusBadge status={tx.ledger_status} small />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </Card>
     </div>
+  );
+}
+
+function EthTxRow({ t }: { t: EthTx }) {
+  const ok = t.status === "success";
+  return (
+    <li className={`card-inner p-3 ${ok ? "" : "!border-quar"}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-xs text-gold">{t.function}()</span>
+        <span
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+            ok ? "border-clear/50 bg-clear/15 text-clear-ink" : "border-quar/50 bg-quar/15 text-quar-ink"
+          }`}
+        >
+          {ok ? <ShieldCheck size={11} aria-hidden /> : <XCircle size={11} aria-hidden />}
+          {ok ? "Success" : "Reverted"}
+        </span>
+        <span className="tnum ml-auto text-[10px] text-muted">gas {num(t.gas_used)}</span>
+      </div>
+      <div className="mt-1.5 grid gap-0.5 font-mono text-[10px] text-muted">
+        <span className="truncate" title={t.hash}>
+          tx&nbsp;&nbsp;&nbsp;{t.hash}
+        </span>
+        <span className="truncate" title={t.from}>
+          from {t.from_label} · {ethShort(t.from, 8)} · nonce {t.nonce}
+        </span>
+      </div>
+      {t.events && t.events.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {t.events.slice(0, 6).map((e, i) => (
+            <li key={i} className="rounded-lg bg-panel-3 px-2 py-1 font-mono text-[10px] text-ink-2">
+              <KeyRound size={10} className="mr-1 inline text-gold" aria-hidden />
+              {e.event}(
+              {Object.entries(e.args)
+                .filter(([k]) => ["txId", "status", "riskBps", "id", "role"].includes(k))
+                .map(([k, v]) => `${k}=${String(v)}`)
+                .join(", ")}
+              )
+            </li>
+          ))}
+          {t.events.length > 6 && (
+            <li className="text-[10px] text-muted">+ {t.events.length - 6} more events</li>
+          )}
+        </ul>
+      )}
+      {!ok && (
+        <p className="mt-2 text-[11px] text-quar-ink">
+          The contract rejected this call — the attempt is permanently recorded, but no state changed.
+        </p>
+      )}
+    </li>
   );
 }
 
@@ -452,107 +598,6 @@ function Mini({ k, v }: { k: string; v: string }) {
     <div className="card-inner px-3 py-2">
       <p className="text-[10px] uppercase tracking-wider text-muted">{k}</p>
       <p className="tnum mt-0.5 text-sm text-ink">{v}</p>
-    </div>
-  );
-}
-
-async function sha256(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** Rebuilds the Merkle tree in the browser from today's record hashes — same algorithm as the backend.
- *  With `highlight`, shows the inclusion proof for that leaf: its path (gold) and the sibling hashes
- *  (dashed) a verifier needs. */
-function MerkleTree({
-  leaves,
-  root,
-  highlight = null,
-  label,
-}: {
-  leaves: string[];
-  root: string;
-  highlight?: number | null;
-  label?: string;
-}) {
-  const [levels, setLevels] = useState<string[][] | null>(null);
-  const key = leaves.join(",");
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const out: string[][] = [leaves];
-      let level = [...leaves];
-      while (level.length > 1) {
-        if (level.length % 2) level.push(level[level.length - 1]);
-        const next: string[] = [];
-        for (let i = 0; i < level.length; i += 2) next.push(await sha256(level[i] + level[i + 1]));
-        out.push(next);
-        level = next;
-      }
-      if (alive) setLevels(out);
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  if (!levels) return null;
-  const computedRoot = levels[levels.length - 1][0];
-  const match = computedRoot === root;
-  // Path index per level (bottom-up) for the highlighted leaf.
-  const pathIdx = highlight === null ? [] : levels.map((_, d) => highlight >> d);
-  const siblings = levels.length - 1;
-  return (
-    <div className="mt-5">
-      <p className="mb-2 text-[11px] uppercase tracking-wider text-muted">
-        Merkle tree — rebuilt in your browser from today's data
-      </p>
-      <div className="space-y-2">
-        {levels
-          .map((lvl, d) => ({ lvl, d }))
-          .reverse()
-          .map(({ lvl, d }) => (
-            <div key={d} className="flex justify-center gap-1.5">
-              {lvl.map((h, j) => {
-                const isRoot = d === levels.length - 1;
-                const onPath = highlight !== null && pathIdx[d] === j;
-                const isSibling = highlight !== null && !isRoot && (pathIdx[d] ^ 1) === j;
-                const base = isRoot
-                  ? match
-                    ? "border-gold/60 text-gold"
-                    : "border-quar text-quar-ink"
-                  : "border-line text-muted";
-                return (
-                  <span
-                    key={j}
-                    title={h}
-                    className={`rounded-lg border px-1.5 py-1 font-mono text-[9px] transition ${
-                      onPath
-                        ? "border-gold bg-gold text-gold-ink"
-                        : isSibling
-                          ? "border-dashed border-gold text-gold"
-                          : base
-                    }`}
-                  >
-                    {h.slice(0, 6)}
-                  </span>
-                );
-              })}
-            </div>
-          ))}
-      </div>
-      <p className={`mt-2 text-center text-[11px] ${match ? "text-clear-ink" : "text-quar-ink"}`}>
-        {match ? "✓ Root matches the block header" : "✗ Root differs from the block header"}
-      </p>
-      {highlight !== null && (
-        <p className="mt-2 rounded-2xl bg-panel-2 px-3 py-2 text-center text-[11px] text-ink-2">
-          Inclusion proof for <span className="font-mono text-gold">{label}</span>: hash it with the{" "}
-          {siblings} dashed sibling hash{siblings === 1 ? "" : "es"} going up — if you reach the root, the
-          record is in this block. {siblings} hashes instead of all {leaves.length} records.
-        </p>
-      )}
     </div>
   );
 }

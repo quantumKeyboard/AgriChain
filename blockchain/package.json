@@ -1,0 +1,23 @@
+{
+  "name": "agrichain-contracts",
+  "private": true,
+  "version": "1.0.0",
+  "description": "AgriChainLedger smart contract (Solidity) + local Ethereum node for AgriChain Sentinel",
+  "scripts": {
+    "node": "hardhat node --hostname 127.0.0.1 --port 8545",
+    "compile": "hardhat compile && node scripts/export-abi.js",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
+    "@nomicfoundation/hardhat-ethers": "^3.1.3",
+    "chai": "^4.5.0",
+    "ethers": "^6.17.0",
+    "hardhat": "^2.29.1",
+    "solc": "0.8.28"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0"
+  }
+}

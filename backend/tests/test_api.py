@@ -30,18 +30,20 @@ def test_injected_fraud_is_quarantined_then_rejected_onto_the_chain(client):
     assert any(t["id"] == tx_id for t in client.get("/api/quarantine").json()["open"])
 
     d = client.post(f"/api/quarantine/{tx_id}/decision", json={"action": "reject", "note": "test"}).json()
-    assert d["status"] == "REJECTED" and d["sealed_blocks"]
+    assert d["status"] == "REJECTED" and d["on_chain"]["tx_hash"].startswith("0x")
     detail = client.get(f"/api/transactions/{tx_id}").json()
-    assert detail["ledger_status"] == "REJECTED" and detail["block_index"] == d["sealed_blocks"][-1]
+    assert detail["ledger_status"] == "REJECTED" and detail["verdict_block"] == d["on_chain"]["block"]
+    assert client.get(f"/api/chain/records/{tx_id}").json()["on_chain"]["status"] == "REJECTED"
     assert client.post(f"/api/quarantine/{tx_id}/decision", json={"action": "approve"}).status_code == 409
     assert client.get("/api/chain/verify").json()["valid"] is True
 
 
-def test_clean_traffic_fills_blocks(client):
-    h0 = client.get("/api/chain/blocks?limit=1").json()["height"]
-    client.post("/api/sim/step", json={"n": 12})
-    client.post("/api/chain/seal")
-    assert client.get("/api/chain/blocks?limit=1").json()["height"] > h0
+def test_live_traffic_is_recorded_on_chain(client, chain):
+    n0, h0 = chain.record_count(), client.get("/api/chain/blocks?limit=1").json()["head"]
+    res = client.post("/api/sim/step", json={"n": 5}).json()["results"]
+    assert all(r["on_chain"]["tx_hash"].startswith("0x") for r in res)
+    assert chain.record_count() == n0 + 5
+    assert client.get("/api/chain/blocks?limit=1").json()["head"] >= h0 + 5
 
 
 def test_dashboard_endpoints(client):
@@ -57,6 +59,7 @@ def test_dashboard_endpoints(client):
         "/api/model/report",
         "/api/sim/meta",
         "/api/chain/blocks/1",
+        "/api/chain/info",
     ]:
         assert client.get(path).status_code == 200, path
 
@@ -67,8 +70,9 @@ def test_batch_trail(client):
     assert trail["batch"]["id"] == b["id"] and len(trail["hops"]) == b["hops"]
 
 
-def test_tamper_endpoint_then_reset(client):
-    client.post("/api/dev/tamper", json={"mode": "quantity"})
-    assert client.get("/api/chain/verify").json()["valid"] is False
-    client.post("/api/dev/reset")
+def test_reset_deploys_a_fresh_contract(client, chain):
+    old = chain.contract.address
+    r = client.post("/api/dev/reset").json()
+    assert r["contract"] != old
+    assert client.get("/api/chain/info").json()["contract_address"] == r["contract"]
     assert client.get("/api/chain/verify").json()["valid"] is True

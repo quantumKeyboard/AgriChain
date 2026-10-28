@@ -55,12 +55,17 @@ export interface TxView {
   shap_top?: ShapItem[] | null;
   type_probs?: Record<string, number>;
   ledger_status: LedgerStatus;
-  block_index: number | null;
-  tx_hash: string | null;
+  /** false = never recorded on Ethereum (its seller signature would be rejected by the contract). */
+  on_chain: boolean;
+  block_number: number | null;
+  eth_tx_hash: string | null;
+  verdict_block: number | null;
+  verdict_tx_hash: string | null;
+  data_hash: string;
   review: { action: string; note: string; reviewed_at: string } | null;
   signature: string;
   signature_valid: boolean;
-  seller_public_key: string | null;
+  seller_address: string | null;
 }
 
 export interface Assessment {
@@ -76,7 +81,8 @@ export interface Assessment {
   rule_hits: RuleHit[];
   shap_top: ShapItem[] | null;
   model_version: string;
-  sealed_blocks?: number[];
+  on_chain?: OnChainReceipt | null;
+  signature_valid?: boolean;
   total_value?: number;
   ref_price?: number;
 }
@@ -92,8 +98,9 @@ export interface Summary {
   value_screened: number;
   value_blocked: number;
   avg_risk: number;
-  chain_height: number;
-  pending_pool: number;
+  chain_height: number | null;
+  on_chain_records: number;
+  off_chain_only: number;
   ground_truth: { injected: number; caught: number; legit: number; false_alarms: number };
 }
 
@@ -112,39 +119,87 @@ export interface Heatmap {
   cells: { region: string; crop: string; count: number; avg_risk: number | null; flagged: number }[];
 }
 
-export interface BlockSummary {
-  index: number;
-  timestamp: string;
-  prev_hash: string;
-  merkle_root: string;
-  nonce: number;
-  difficulty: number;
-  hash: string;
-  tx_count: number;
-  status_counts: Record<string, number>;
+export interface OnChainReceipt {
+  tx_hash: string;
+  block: number;
+  gas_used?: number;
 }
 
-export interface BlockDetail extends Omit<BlockSummary, "status_counts"> {
-  valid: boolean;
-  reason: string | null;
-  entries: {
-    position: number;
-    status: string;
-    tx_hash: string;
-    recomputed_hash: string | null;
-    tampered: boolean;
-    merkle_proof: { hash: string; position: string }[];
-    tx: TxView | undefined;
-  }[];
+export interface EthTx {
+  hash: string;
+  from: string;
+  from_label: string;
+  to: string | null;
+  function: string;
+  status: "success" | "reverted";
+  gas_used: number;
+  tx_ids: string[];
+  nonce: number;
+  events?: { event: string; args: Record<string, string | number | boolean> }[];
+  input_size?: number;
 }
+
+export interface EthBlock {
+  number: number;
+  hash: string;
+  parent_hash: string;
+  timestamp: number;
+  gas_used: number;
+  tx_count: number;
+  transactions: EthTx[];
+}
+
+export interface EthBlockDetail extends Omit<EthBlock, "tx_count"> {
+  state_root: string;
+  transactions_root: string;
+  receipts_root: string;
+  gas_limit: number;
+  miner: string;
+  records: TxView[];
+}
+
+export interface ChainInfo {
+  network: string;
+  rpc_url: string;
+  chain_id: number;
+  client: string;
+  block_number: number;
+  contract_address: string | null;
+  deploy_tx: string | null;
+  deploy_block: number;
+  record_count: number;
+  accounts: { role: string; address: string; balance_eth: number }[];
+  solidity: string;
+}
+
+export type VerifyProblem =
+  "DATA_MISMATCH" | "BAD_SIGNATURE" | "STATUS_MISMATCH" | "MISSING_OFF_CHAIN" | "NOT_ON_CHAIN";
 
 export interface VerifyResult {
   valid: boolean;
-  first_broken_index: number | null;
-  reason: string | null;
-  blocks_checked: number;
-  blocks: { index: number; ok: boolean; reason: string | null; tampered_tx: string[] }[];
-  checked_at: string;
+  checked: number;
+  off_chain_only: number;
+  contract_address: string;
+  block_number: number;
+  issues: { tx_id: string; problem: VerifyProblem; detail: string; block: number | null }[];
+}
+
+export type AttackKind =
+  | "db_quantity"
+  | "db_verdict"
+  | "chain_overwrite"
+  | "chain_unauthorized"
+  | "chain_reverdict"
+  | "chain_forged";
+
+export interface AttackResult {
+  kind: AttackKind;
+  layer: "database" | "blockchain";
+  tx_id: string;
+  result: "edited" | "reverted";
+  change: string;
+  explain: string;
+  revert?: { error: string; args: Record<string, string>; tx_hash: string; block: number };
 }
 
 export interface BatchSummary {
@@ -248,7 +303,7 @@ export interface SimResult {
   pred_label: string;
   injected: boolean;
   sim_label: string;
-  sealed_blocks: number[];
+  on_chain: OnChainReceipt | null;
   crop: string;
   total_value: number;
 }
@@ -302,15 +357,19 @@ export type TxInput = Omit<
   | "rule_hits"
   | "model_version"
   | "ledger_status"
-  | "block_index"
-  | "tx_hash"
+  | "on_chain"
+  | "block_number"
+  | "eth_tx_hash"
+  | "verdict_block"
+  | "verdict_tx_hash"
+  | "data_hash"
   | "review"
   | "total_value"
   | "id"
   | "timestamp"
   | "signature"
   | "signature_valid"
-  | "seller_public_key"
+  | "seller_address"
 > & { batch?: Record<string, unknown> | null; forge_signature?: boolean };
 
 export interface FeedbackSummary {

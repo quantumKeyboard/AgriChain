@@ -33,8 +33,9 @@ Button and page names below are written exactly as they appear on screen.
 
 | Step | Why |
 |---|---|
-| Open the launcher → **1** (*Start the app*) | Starts the API (port 8000) and the UI (port 5173) |
-| In the app: **Ledger** → **Reset demo data** (or launcher option **7**) | Fresh history: ~300 transactions, ~60 blocks, 4 items waiting in Quarantine, chain verified green |
+| Open the launcher → **1** (*Start the app*) | Starts the Ethereum node (Hardhat, port 8545), the API (port 8000) and the UI (port 5173). On Windows you get three windows: **AgriChain Blockchain**, **AgriChain API**, **AgriChain UI** |
+| In the app: **Ledger** → **Reset demo (redeploy contract)** (or launcher option **7**) | Fresh contract and history: ~300 transactions recorded on-chain, 4 items waiting in Quarantine, Verify green |
+| Put the **AgriChain Blockchain** window where the audience can see it (or `.run/chain.log` on Mac/Linux: `tail -f .run/chain.log`) | Every contract call scrolls by live — `eth_sendRawTransaction`, *Contract call: AgriChainLedger#recordTransaction*, gas used, block number |
 | Make sure the **Simulator** toggle (top bar) is **off** | You'll switch it on live for effect |
 | Zoom the browser to 90–100 %, close other tabs | Charts fit the projector |
 | Keep `docs/screenshots/` open in a folder | Backup if anything fails ([Part 7](#part-7--troubleshooting-during-the-demo)) |
@@ -43,9 +44,10 @@ Button and page names below are written exactly as they appear on screen.
 
 > "Agricultural produce changes hands many times — farmer, cooperative, processor, distributor, retailer — and
 > every hand-over is a chance for fraud: inflated quantities, fake organic labels, hidden cold-chain failures,
-> goods traded in circles. **AgriChain Sentinel checks every transaction with machine learning *before* it is
-> written to a blockchain ledger.** Clean ones are sealed into blocks, suspicious ones are held for a human
-> auditor, and the ledger makes any later tampering detectable — even by someone with full database access."
+> goods traded in circles. **AgriChain Sentinel checks every transaction with machine learning and records it,
+> with the model's verdict, in an Ethereum smart contract.** Each seller signs its own invoice; the contract
+> refuses anything that isn't signed by the real seller and never lets a record be changed. Suspicious ones wait
+> for a human auditor, whose verdict also goes on-chain — so the history can't be rewritten, even by us."
 
 ---
 
@@ -60,7 +62,7 @@ Button and page names below are written exactly as they appear on screen.
 | **Simulator** toggle + speed (**Slow / Normal / Fast**) | Streams realistic live transactions through the whole pipeline |
 | **Inject fraud** (gold button) | Sends one fraudulent transaction of the type you pick |
 | Bell with a red number | Transactions waiting for an auditor — click to open Quarantine |
-| Toasts (top-right pop-ups) | Live alerts: quarantined fraud, mined blocks, verdicts |
+| Toasts (top-right pop-ups) | Live alerts: quarantined fraud, verdicts recorded on-chain, attack results |
 
 **Colour language** (same everywhere): 🟢 green = **Clear**, 🟠 amber = **Flagged**, 🔴 red = **Quarantined / Rejected**.
 Gold is the brand colour for charts. Every coloured badge also has an icon and a text label.
@@ -68,11 +70,13 @@ Gold is the brand colour for charts. Every coloured badge also has an icon and a
 **The pipeline in one line** (draw this on the board if you can):
 
 ```
-Transaction → 21 features → [Random Forest + Isolation Forest + 7 rules] → risk 0–1
-   risk < 0.40  → CLEAR      → sealed into the next block
-   0.40 – 0.70 → FLAGGED    → sealed, with a flag
-   ≥ 0.70      → QUARANTINED → waits for an auditor → APPROVED / REJECTED → sealed
-Block = 5 records → Merkle root → proof-of-work → linked to the previous block
+Seller signs invoice (EIP-712, own Ethereum key)
+  → 21 features → [Random Forest + Isolation Forest + 7 rules] → risk 0–1
+  → ML oracle calls AgriChainLedger.recordTransaction(invoice, signature, assessment) on Ethereum
+       risk < 0.40  → Committed
+       0.40 – 0.70 → Flagged
+       ≥ 0.70      → PendingReview → auditor calls resolve() → Approved / Rejected (exactly once)
+  The contract checks the seller's signature; records are write-once; full invoice stays off-chain, its hash on-chain.
 ```
 
 ---
@@ -85,16 +89,16 @@ Each step: **Do** (what to click) → **See** (what appears) → **Say** (the po
 
 - **Do:** Switch the **Simulator** toggle **on** (top bar). Leave it running for ~15 s.
 - **See:** "Live stream" with a pulsing gold dot; the *Transaction history* list fills; the gold *Live risk stream*
-  line moves; green toasts **"Block #N mined — Proof-of-work found"** appear every few seconds.
-- **Say:** *"Every one of these is being scored by the ML engine in ~70 ms, then sealed into a block with
-  proof-of-work. The big number is the total value screened; the bar shows the decision mix."*
+  line moves. In the **Blockchain** window, a `recordTransaction` call is mined for every transaction.
+- **Say:** *"Every one of these is scored by the ML engine in ~70 ms and then recorded by our smart contract on
+  Ethereum — you can see each transaction being mined in this window. The big number is the total value screened."*
 
 ### Step 2 — Catch a fraud (≈ 45 s) · *any page*
 
 - **Do:** **Inject fraud** → **Phantom quantity**. Then switch the **Simulator off** (keeps the screen calm).
 - **See:** A red toast **"Quarantined: Phantom quantity"** with a risk around 80 %; the bell number goes up.
-- **Say:** *"I just sent an invoice claiming more produce than the farm could physically grow. It was stopped
-  before reaching the ledger."*
+- **Say:** *"I just sent an invoice claiming more produce than the farm could physically grow. It's recorded
+  on-chain as PendingReview — it cannot be treated as a completed sale until an auditor decides."*
 
 ### Step 3 — Explain and decide (≈ 1 min) · *Quarantine*
 
@@ -103,28 +107,31 @@ Each step: **Do** (what to click) → **See** (what appears) → **Say** (the po
   "Quantity 30,758 kg is 2.2× the quantity the seller actually received for this batch."* — the **SHAP bars**
   (which features pushed toward fraud), the **Hybrid score** breakdown, and **Fraud-type probabilities**.
 - **Do:** Type a note (e.g. *"Weighbridge slip doesn't match"*) → **Reject**.
-- **See:** Toast: *"…rejected · Sealed into block #N · saved as a training label"*.
+- **See:** Toast: *"…rejected · Verdict recorded on Ethereum in block #N · saved as a training label"*. A
+  `resolve` call appears in the Blockchain window.
 - **Say:** *"The system never just says 'fraud' — it says why, in words and in model terms. The auditor's
-  verdict is written permanently to the chain, and it also becomes training data."*
+  verdict is an Ethereum transaction from the auditor account — permanent, and it also becomes training data."*
 
-### Step 4 — Prove the ledger is tamper-evident (≈ 1 min 30 s) · *Ledger*
+### Step 4 — Prove the blockchain can't be rewritten (≈ 1 min 30 s) · *Ledger*
 
-- **Do:** **Verify chain**.
-- **See:** Green banner **"Chain intact — all N blocks verified."**
-- **Do:** In *Attack simulation*, click **Flip a REJECTED fraud verdict**.
-- **See:** Red banner **"Tampering detected in block #N"** naming the exact transaction; that block turns red with
-  a skull icon; in the block detail the record shows **recomputed … ✗ MISMATCH** and the in-browser Merkle tree
-  root turns red.
-- **Say:** *"This is a corrupt insider quietly changing 'rejected' to 'committed' in the database. Because the
-  verdict is part of the record's hash, the Merkle root no longer matches, and we know exactly where."*
-- **Do:** **Rewrite history and re-mine**.
-- **See:** Again **"Tampering detected"** — this time the reason is **"Seller signature invalid… Hashes were
-  recomputed to hide the edit, but signatures cannot be."** The record shows *recomputed ✓ matches* but
-  *signature ✗ INVALID*.
-- **Say:** *"This attacker is smarter: they edited a record, recomputed every hash and redid all the
-  proof-of-work, so every hash and link looks valid. It's still caught, because each invoice is digitally signed
-  by its seller, and only the seller has that key."* ⭐ **This is the strongest moment of the demo.**
-- **Do:** **Reset demo data** → **Verify chain** → green again.
+- **See first:** the **AgriChainLedger contract** card — contract address, chain id 31337, the admin / ML oracle /
+  auditor accounts with their ETH balances — and the **Ethereum blocks** strip with the decoded contract calls.
+- **Do:** **Verify against chain**.
+- **See:** Green banner **"Database matches the blockchain — all N on-chain records verified."**
+- **Do:** In *Attack simulation → Off-chain*, click **Flip a REJECTED verdict to APPROVED**.
+- **See:** The database accepts it; Verify turns red: **"Verdict / status edited — Database says APPROVED, the
+  contract says REJECTED"**, naming the transaction.
+- **Say:** *"An insider can always edit our database — but the smart contract still has the real verdict, so we
+  catch it and know exactly which record."*
+- **Do:** *On-chain* → **Seller approves their own fraud**.
+- **See:** Green result **"Transaction reverted: AccessControlUnauthorizedAccount"** with `neededRole: AUDITOR_ROLE`;
+  the explorer jumps to a block whose `resolve()` call is red **Reverted**.
+- **Say:** *"Now the attack goes to the blockchain itself: the fraudster sends a real transaction from their own
+  wallet to approve their rejected invoice. The EVM rejects it — only the auditor role may decide. The failed
+  attempt is even recorded in the block."* ⭐ **This is the strongest moment of the demo.**
+- **Optional:** **Overwrite an on-chain record** → `RecordExists`; **Change a final verdict** → `NotPendingReview`;
+  **Record a forged invoice** → `InvalidSellerSignature`.
+- **Do:** **Reset demo (redeploy contract)** → **Verify against chain** → green again.
 
 ### Step 5 — Close with the model (≈ 45 s) · *Model*
 
@@ -133,8 +140,8 @@ Each step: **Do** (what to click) → **See** (what appears) → **Say** (the po
 - **Say:** *"On a harder test set where fraud is subtler, rules alone drop to F1 0.87 while the hybrid holds
   0.91. The data is synthetic, so these scores are optimistic — we say that openly on this page."*
 
-**Close:** *"So: ML decides before anything is recorded, a human decides the hard cases, and the blockchain
-plus signatures make the record trustworthy afterwards."*
+**Close:** *"So: ML decides as each transaction arrives, a human decides the hard cases, and the smart contract —
+with every seller's signature — makes the record impossible to rewrite afterwards."*
 
 ---
 
@@ -153,7 +160,7 @@ Use these for a longer demo or when someone asks *"can you show…"*. ⭐ = reco
 | **Live risk stream** | Hover a red or amber dot, click it | Last 60 risk scores against the 40 % and 70 % threshold lines; a click opens that transaction |
 | **Suspected fraud by type** | — | Which fraud patterns the model sees most |
 | **Risk by region × crop** ⭐ | Hover a bright cell | Heatmap of average risk; ⚑ = flagged count. *"Fraud hot-spots by state and crop"* |
-| **Ledger** card | **Verify entire chain** | One-click integrity check without leaving the dashboard |
+| **Ledger** card | **Verify database against chain** | Latest Ethereum blocks + one-click integrity check without leaving the dashboard |
 | **Transaction history** | Click any row | Opens the full detail drawer (see 4.2) |
 | **Where in the chain** | — | Which hand-over stage gets flagged most |
 | **Export CSV** | Top right | Downloads every transaction for Excel |
@@ -161,8 +168,9 @@ Use these for a longer demo or when someone asks *"can you show…"*. ⭐ = reco
 ### 4.2 Transaction detail drawer (click any transaction anywhere)
 
 Shows risk gauge, crop and quantity, seller → buyer, price vs. market reference, transit, temperature, organic
-status, the rule reasons, SHAP bars, the hybrid score, and the **On-chain record**: block number, record hash,
-**seller signature status** (*"Seller signature valid (Ed25519)"*), the auditor's note, and **Trace this batch**.
+status, the rule reasons, SHAP bars, the hybrid score, and the **On-chain record**: the Ethereum block and
+transaction hash that recorded it, the verdict's block, the invoice's keccak256 `dataHash`, **seller signature
+status** (*"Seller's EIP-712 signature valid"*), the auditor's note, and **Trace this batch**.
 Press **Esc** to close.
 
 ### 4.3 Check a transaction (`/check`) ⭐
@@ -176,7 +184,8 @@ The "what-if" lab — great for questions like *"what if the price was lower?"*
    **Say:** *"An honestly reported breach is not fraud — hiding it is. The model learned that difference."*
 4. Click **Forged signature** (or tick **Forge signature (signed by someone else)**) → **Analyze** → quarantined by
    rule **SIGNATURE_INVALID**, regardless of the ML score.
-5. **Submit to the blockchain pipeline** records it for real (a clean one gets sealed; a risky one goes to Quarantine).
+5. **Submit to the blockchain pipeline** records it for real: the result names the Ethereum block it was recorded
+   in. A forged one is *not* sent — the contract would reject it — and waits in Quarantine instead.
 
 Every field is editable: quantity, unit price, transit time, temperatures, organic flags, seller/buyer, stage.
 
@@ -186,25 +195,27 @@ Every field is editable: quantity, unit price, transit time, temperatures, organ
 |---|---|
 | Queue sorted by risk | Auditor sees the most dangerous first |
 | Full explanation + **Fraud-type probabilities** | The model's confidence for each of the 6 fraud types |
-| **Approve / Reject** with note | Either verdict is sealed on-chain; **Approve** = the model raised a false alarm |
-| **Recently reviewed** table | Audit history with block links |
-| **Export audit trail (CSV)** | Compliance report: verdict, reasons, auditor note, block, hash |
+| **Approve / Reject** with note | Either verdict is an on-chain `resolve()` call by the auditor account; **Approve** = the model raised a false alarm. Approving a forged invoice fails: the contract reports `InvalidSellerSignature` |
+| **Recently reviewed** table | Audit history with links to the verdict's Ethereum block |
+| **Export audit trail (CSV)** | Compliance report: verdict, reasons, auditor note, verdict block and transaction hash |
 
 ### 4.5 Ledger (`/ledger`) ⭐
 
 | Feature | How to show it | Talking point |
 |---|---|---|
-| Chain strip | Scroll; click any block | Each block shows its hash prefix and one coloured bar per record |
-| **Verify chain** | Click | Recomputes every record hash, Merkle root, header hash, proof-of-work, link **and signature** |
-| Block detail | Click a block | Block hash, previous hash, Merkle root, nonce, difficulty (hash starts with `000`) |
-| Transaction records | — | *stored* vs *recomputed* hash, and the signature check, per record |
-| **Prove** ⭐ | Click **Prove** on a record | Highlights the Merkle inclusion proof: gold path + dashed sibling hashes. *"To prove one record is in a block you need only 3 hashes, not all 5 records — that's how light clients verify."* |
-| **Inflate a sealed quantity ×10** | Attack 1 | Data edit → Merkle mismatch |
-| **Flip a REJECTED fraud verdict** | Attack 2 | Verdict edit → caught because the verdict is hashed |
-| **Edit a block header (nonce)** | Attack 3 | Header edit → hash / proof-of-work no longer valid |
-| **Rewrite history and re-mine** | Attack 4 | Everything recomputed → caught only by the seller's signature |
-| **Reset demo data** | After any attack | Fresh, valid chain |
-| **CSV** | Next to Verify | All block headers |
+| **AgriChainLedger contract** card | — | Contract address, network (Hardhat, chain 31337), node client, block height, number of records, the deploy transaction, and the three role accounts with ETH balances |
+| **Verify against chain** | Click | Reads every record back from the contract and checks the database copy: data hash, status, seller signature, missing rows |
+| **Ethereum blocks** strip | Click any block | Real blocks from the node: number, hash, the contract function called; red = a reverted transaction |
+| Block detail | — | Block hash, parent hash, state / transactions / receipts roots, gas used and limit |
+| **Transactions in this block** | — | Decoded with the ABI: `recordTransaction`, `recordTransactions` (bulk), `resolve`, `registerParticipants`; who sent it (ML oracle, auditor, a participant); events such as `TransactionRecorded(txId, status, riskBps)` |
+| **Inflate a recorded quantity ×10** | Off-chain attack | Database edit → Verify: *Invoice data edited* + *Seller signature broken* |
+| **Flip a REJECTED verdict to APPROVED** | Off-chain attack | Database edit → Verify: *Verdict / status edited* |
+| **Overwrite an on-chain record** | On-chain attack | Reverted with `RecordExists` — records are write-once, even for the oracle |
+| **Seller approves their own fraud** ⭐ | On-chain attack | Reverted with `AccessControlUnauthorizedAccount(…, AUDITOR_ROLE)` |
+| **Change a final verdict** | On-chain attack | Reverted with `NotPendingReview` — exactly one verdict per record |
+| **Record a forged invoice** | On-chain attack | Reverted with `InvalidSellerSignature(expectedSeller, recoveredSigner)` |
+| **Reset demo (redeploy contract)** | After any attack | Deploys a fresh contract and re-records the history |
+| **CSV** | Next to Verify | Every on-chain record, read live from the contract |
 
 ### 4.6 Batch trace (`/trace`)
 
@@ -243,8 +254,10 @@ Every field is editable: quantity, unit price, transit time, temperatures, organ
 | Show | Where |
 |---|---|
 | Interactive API (every endpoint, try it live) | **http://localhost:8000/docs** |
-| Run the test suites (32 backend + 11 frontend) | Launcher option **9** |
-| Code entry points | `backend/app/chain/ledger.py`, `backend/app/chain/identity.py`, `backend/app/ml/` |
+| The smart contract | `blockchain/contracts/AgriChainLedger.sol` |
+| Watch the node | The **AgriChain Blockchain** window (Mac/Linux: `tail -f .run/chain.log`) |
+| Run the test suites (10 contract + 35 backend + 11 frontend) | Launcher option **9** |
+| Code entry points | `blockchain/contracts/`, `backend/app/chain/ethereum.py` (web3 client), `backend/app/chain/identity.py` (EIP-712), `backend/app/ml/` |
 | Full technical overview | `Project-Map.md` |
 
 ---
@@ -261,30 +274,41 @@ Use **Inject fraud** (top bar) or the **Check** page's example buttons.
 | **Concealed cold-chain breach** | Perishable over its temperature limit but declared "cold chain OK" | `COLD_CHAIN` | "Sensor max … exceeds the … limit…, yet the shipment is declared 'cold chain OK'." |
 | **Circular trading** | Goods sold back to an earlier holder (A→B→C→A) | `CIRCULAR` + graph cycles | "Buyer already handled this batch earlier — goods are moving in a circle." |
 | **Duplicate invoice** | The same invoice submitted twice | `DUPLICATE` | "An identical invoice … was already submitted." |
-| **Forged signature** | A legitimate-looking invoice signed with someone else's key | Cryptography — hard gate | "The signature does not match seller …'s registered public key…" |
+| **Forged signature** | A legitimate-looking invoice signed with someone else's key | Cryptography — hard gate; the contract would revert it, so it stays off-chain | "The signature does not match seller …'s registered key…" |
 
 ---
 
 ## Part 6 — Viva questions and answers
 
 **Is this a real blockchain?**
-It implements what makes a blockchain tamper-evident: SHA-256 hashing of every record, a Merkle root per block,
-previous-hash links, proof-of-work, digital signatures and full re-verification. It is **single-node** — no
-peer-to-peer network or multi-party consensus. That was a deliberate scope choice for a course project; anchoring
-block hashes on Ethereum is listed as future work.
+Yes. `AgriChainLedger.sol` is a Solidity smart contract, compiled and deployed to an Ethereum node (Hardhat Network:
+the same EVM, JSON-RPC API, transaction and block format as Ethereum). The backend sends signed raw transactions with
+`web3.py`; the Ledger page reads blocks straight from the node. For the demo the node runs locally with one validator
+and free test ETH; the same contract deploys unchanged to the Sepolia testnet (`npm run deploy` with an RPC URL and a
+funded key).
+
+**What exactly is stored on-chain?**
+Per transaction: its id and batch, seller and buyer addresses, the keccak256 hash of the full invoice, the risk score,
+predicted fraud type, status, model version, block and time, and later the auditor and a hash of the note. The full
+invoice stays in the database because on-chain storage is public and expensive; the hash proves it was not changed.
 
 **Why ML *and* blockchain?**
 ML decides *before* a record is written (prevention); the blockchain guarantees the record and the verdict
 can't be changed *afterwards* (integrity). Blockchain alone would faithfully store fraudulent data.
 
-**What do the signatures add if you already have hashes?**
-Whoever controls the database could edit a record and recompute every hash and the proof-of-work (demo attack 4).
-Only the seller holds their private key, so the edited record can't be re-signed — verification still fails.
-Signatures also stop invoices sent in someone else's name.
+**What do the signatures add?**
+The contract only records an invoice if `ECDSA.recover` on its EIP-712 signature returns the seller's address. So
+even the platform's own oracle cannot record a transaction in a farmer's name (demo: *Record a forged invoice* →
+`InvalidSellerSignature`), and a database edit also breaks the signature.
 
-**Who holds the keys?**
-In this demo the server derives every participant's key from a seed so the simulator can sign for them. In
-production each participant keeps their own private key and only public keys are registered.
+**Who holds the keys? Who pays gas?**
+Each participant has its own Ethereum account. In this demo the server derives those keys from a seed so the
+simulator can sign for everyone; in production each participant signs in its own wallet. The ML oracle submits the
+signed invoices and pays the gas (a relayer / meta-transaction pattern), so farmers need no ETH.
+
+**Why can't the admin just change a record?**
+There is no function that edits or deletes a record. `recordTransaction` reverts with `RecordExists` for an existing
+id, and `resolve` works once, only from the auditor role. Changing that would need a new contract at a new address.
 
 **Where does the data come from? Isn't the accuracy too high?**
 A simulator we wrote generates 20,000 agricultural transactions with six injected fraud types, realistic noise,
@@ -309,13 +333,9 @@ Rule reasons are fixed templates filled with the transaction's numbers. Model re
 The learning loop: Approved → labelled legitimate (false alarm), Rejected → the suspected fraud type. Retraining
 adds these to the training data only, so before/after metrics on the same test sets are a fair comparison.
 
-**What's the Merkle proof for?**
-Proving one record is inside a block using only log₂(n) sibling hashes, without revealing or downloading the other
-records — how lightweight clients verify membership.
-
 **What would you add next?**
-Ethereum anchoring of block hashes, multi-auditor approval, validation on a real dataset, and a mobile view for
-farmers. (See `DESIGN.md` → Later.)
+Deployment to a public testnet with participants signing in their own wallets (MetaMask), multi-auditor approval
+in the contract, validation on a real dataset, and a mobile view for farmers. (See `DESIGN.md` → Later.)
 
 ---
 
@@ -324,11 +344,12 @@ farmers. (See `DESIGN.md` → Later.)
 | Problem | Fix |
 |---|---|
 | Page is blank or shows *"Cannot reach the API"* | The API isn't running. Launcher → **4** (Stop) → **1** (Start). Wait for the API window to say *Application startup complete* |
+| *"Ethereum node not reachable"* | The Blockchain window was closed. Launcher → **1** (starts it again); the API redeploys the contract and re-records the history by itself (~10 s) |
 | *Port already in use* | Launcher → **4**, then **1** |
-| Charts look empty | **Ledger → Reset demo data**, or switch the Simulator on for 20 s |
-| **Flip a REJECTED fraud verdict** says no verdict found | Reject one item in Quarantine first (or Reset demo data) |
+| Charts look empty | **Ledger → Reset demo (redeploy contract)**, or switch the Simulator on for 20 s |
+| A verdict attack says no REJECTED verdict found | Reject one item in Quarantine first (or reset the demo) |
 | Quarantine is empty | **Inject fraud** → any type |
-| A tamper demo left the chain red | **Reset demo data** |
+| An off-chain attack left Verify red | **Reset demo (redeploy contract)** |
 | Retrain button is greyed out | No usable labels yet — Approve/Reject a few items in Quarantine |
 | Setup failed with *Read timed out* | Slow internet — press **2** again (it resumes), or use another network |
 | Something else on stage | Switch to the screenshots in `docs/screenshots/` and narrate Part 3 from them |
@@ -338,15 +359,16 @@ farmers. (See `DESIGN.md` → Later.)
 ## Part 8 — Quick reference card
 
 ```
-Launcher:  1 Start   2 Setup   3 Open   4 Stop   5 API only   6 UI only
+Launcher:  1 Start   2 Setup   3 Open   4 Stop   5 Blockchain + API   6 UI only
            7 Reset demo   8 Retrain   9 Tests   (L Logs — Mac/Linux)   0 Exit
 App:       http://localhost:5173        API docs: http://localhost:8000/docs
+Ethereum:  http://127.0.0.1:8545 (Hardhat, chain id 31337)
 
 Demo order:  Simulator ON → Inject Phantom quantity → Quarantine: Reject
-             → Ledger: Verify → Flip verdict → Rewrite & re-mine → Reset
+             → Ledger: Verify → Flip verdict (off-chain) → Seller approves own fraud (on-chain, reverted) → Reset
              → Model: Shifted ablation (→ Retrain if time)
 
 Thresholds:  < 0.40 Clear · 0.40–0.70 Flagged · ≥ 0.70 Quarantined
 Risk      =  0.60 × Random Forest + 0.25 × Rules + 0.15 × Isolation Forest
-Block     =  5 records · SHA-256 · Merkle root · proof-of-work (3 hex zeros) · Ed25519 signatures
+On-chain  =  AgriChainLedger.sol · EIP-712 seller signatures · roles: admin, ML oracle, auditor · write-once
 ```

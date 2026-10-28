@@ -299,7 +299,7 @@ function Hop({
         <p className="mt-1 text-xs text-muted">
           {h.seller_name} → {h.buyer_name} · {kg(h.quantity_kg)} @ {inr(h.unit_price)}/kg ·{" "}
           {clock(h.timestamp)}
-          {h.block_index !== null && <> · block #{h.block_index}</>}
+          {h.block_number !== null && <> · Ethereum block #{h.block_number}</>}
         </p>
         {h.rule_hits.length > 0 && (
           <ul className="mt-2 space-y-1">

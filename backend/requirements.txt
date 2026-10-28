@@ -9,4 +9,4 @@ shap
 joblib
 python-dotenv
 networkx
-cryptography
+web3>=7,<9

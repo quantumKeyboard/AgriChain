@@ -3,8 +3,10 @@ import { api } from "./client";
 import type {
   Assessment,
   BatchSummary,
-  BlockDetail,
-  BlockSummary,
+  ChainInfo,
+  EthBlock,
+  EthBlockDetail,
+  OnChainReceipt,
   FeedbackSummary,
   HistoryEntry,
   RetrainResult,
@@ -84,20 +86,20 @@ export const useQuarantine = () =>
     queryFn: () => api.get<{ open: TxView[]; reviewed: TxView[] }>("/quarantine"),
   });
 
-export const useBlocks = (limit = 40) =>
+export const useChainInfo = () =>
+  useQuery({ queryKey: ["chain-info"], queryFn: () => api.get<ChainInfo>("/chain/info") });
+
+export const useBlocks = (limit = 25) =>
   useQuery({
     queryKey: ["blocks", limit],
-    queryFn: () =>
-      api.get<{ height: number; pending: number; difficulty: number | null; blocks: BlockSummary[] }>(
-        `/chain/blocks?limit=${limit}`,
-      ),
+    queryFn: () => api.get<{ head: number; blocks: EthBlock[] }>(`/chain/blocks?limit=${limit}`),
   });
 
-export const useBlock = (index: number | null) =>
+export const useBlock = (number: number | null) =>
   useQuery({
-    queryKey: ["block", index],
-    queryFn: () => api.get<BlockDetail>(`/chain/blocks/${index}`),
-    enabled: index !== null,
+    queryKey: ["block", number],
+    queryFn: () => api.get<EthBlockDetail>(`/chain/blocks/${number}`),
+    enabled: number !== null,
   });
 
 export const useBatches = (flaggedOnly: boolean) =>
@@ -142,10 +144,13 @@ export function useDecision() {
   const refresh = useRefreshAll();
   return useMutation({
     mutationFn: (v: { id: string; action: "approve" | "reject"; note: string }) =>
-      api.post<{ tx_id: string; status: string; sealed_blocks: number[] }>(`/quarantine/${v.id}/decision`, {
-        action: v.action,
-        note: v.note,
-      }),
+      api.post<{ tx_id: string; status: string; on_chain: OnChainReceipt | null }>(
+        `/quarantine/${v.id}/decision`,
+        {
+          action: v.action,
+          note: v.note,
+        },
+      ),
     onSuccess: () => refresh(),
   });
 }

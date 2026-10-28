@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from app.chain import identity
+from app.chain.ethereum import get_chain
 from app.db import get_session
 from app.models import Batch, Participant
-from app.routers.transactions import forger_for
 from app.schemas import SimStepIn
 from app.services import ingest
 from app.sim.generator import CROP_NAMES, CROPS, FRAUD_LABELS, REGIONS, STAGE_ROLES, STAGES
-from app.sim.state import get_sim
+from app.sim.state import forger_for, get_sim
 
 router = APIRouter(prefix="/api/sim", tags=["simulator"])
 
@@ -30,7 +30,7 @@ def step(body: SimStepIn, session: Session = Depends(get_session)) -> dict:
     if forged:
         # A legitimate-looking invoice, but signed by someone other than the seller.
         last["sim_label"] = "forged_signature"
-        last["signature"] = identity.sign(last, forger_for(last["seller_id"]))
+        last["signature"] = identity.sign_invoice(last, forger_for(last["seller_id"]), get_chain().domain())
     txs.append(last)
     for tx in txs:
         batch = sim.batches[tx["batch_id"]].as_dict()
@@ -43,7 +43,7 @@ def step(body: SimStepIn, session: Session = Depends(get_session)) -> dict:
                 "pred_label": FRAUD_LABELS.get(r["pred_type"]),
                 "injected": tx["sim_label"] != "none",
                 "sim_label": FRAUD_LABELS.get(tx["sim_label"]),
-                "sealed_blocks": r["sealed_blocks"],
+                "on_chain": r["on_chain"],
                 "crop": tx["crop"],
                 "total_value": tx["total_value"],
             }

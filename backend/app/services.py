@@ -1,4 +1,12 @@
-"""Scoring pipeline: raw transaction -> features -> hybrid score -> routing -> ledger."""
+"""Scoring pipeline: raw transaction -> features -> hybrid score -> AgriChainLedger smart contract.
+
+1. The seller's EIP-712 invoice signature is checked off-chain (the contract checks it again).
+2. The ML engine scores the transaction.
+3. The ML oracle account records it on-chain with its decision; quarantined ones are recorded as
+   PendingReview. Invoices with an invalid signature never reach the chain (the contract would
+   reject them) and wait in quarantine off-chain.
+4. Auditor verdicts are sent on-chain by the auditor account.
+"""
 
 from __future__ import annotations
 
@@ -6,21 +14,24 @@ from datetime import datetime, timedelta
 
 from sqlmodel import Session, or_, select
 
-from app.chain import identity, ledger
+from app.chain import identity
+from app.chain.ethereum import Chain, ChainRevert, get_chain
 from app.ml.explain import explain
 from app.ml.features import compute_features, history_from_records
 from app.ml.scorer import score_one
 from app.models import Assessment, Batch, LedgerEntry, Participant, Review, Transaction
+from app.sim.generator import FRAUD_TYPES
 
-DECISION_TO_STATUS = {"CLEAR": "COMMITTED", "FLAGGED": "FLAGGED"}
+STATUS_FOR_DECISION = {"CLEAR": "COMMITTED", "FLAGGED": "FLAGGED", "QUARANTINED": "PENDING_REVIEW"}
 
 
 class PipelineError(ValueError):
     pass
 
 
-def participant_dict(p: Participant) -> dict:
-    return p.model_dump()
+def fraud_code(pred_type: str) -> int:
+    """On-chain fraud type: 0 = none, 1-6 = FRAUD_TYPES order."""
+    return FRAUD_TYPES.index(pred_type) + 1 if pred_type in FRAUD_TYPES else 0
 
 
 def history_records(session: Session, tx: dict) -> list[dict]:
@@ -39,7 +50,10 @@ def history_records(session: Session, tx: dict) -> list[dict]:
     return [r.model_dump() for r in rows]
 
 
-def assess(session: Session, tx: dict, with_explanation: bool = True) -> tuple[dict, dict]:
+def assess(
+    session: Session, tx: dict, with_explanation: bool = True, chain: Chain | None = None
+) -> tuple[dict, dict]:
+    chain = chain or get_chain()
     seller = session.get(Participant, tx["seller_id"])
     buyer = session.get(Participant, tx["buyer_id"])
     if seller is None or buyer is None:
@@ -48,9 +62,9 @@ def assess(session: Session, tx: dict, with_explanation: bool = True) -> tuple[d
         raise PipelineError("Seller and buyer must be different participants.")
     if not tx.get("signature"):
         # Demo custody: the platform signs on the seller's behalf (see identity.py).
-        tx["signature"] = identity.sign(tx, seller.id)
-    signature_valid = identity.verify(tx, tx["signature"], seller.public_key)
-    sd = participant_dict(seller)
+        tx["signature"] = identity.sign_invoice(tx, seller.id, chain.domain())
+    signature_valid = identity.verify_invoice(tx, tx["signature"], chain.domain())
+    sd = seller.model_dump()
     hist = history_from_records(tx, sd, history_records(session, tx))
     feats = compute_features(tx, sd, hist)
     result = score_one({**tx, "signature_valid": signature_valid}, feats)
@@ -76,24 +90,10 @@ def ensure_batch(session: Session, tx: dict, batch: dict | None) -> None:
     session.add(Batch(**data))
 
 
-def ingest(
-    session: Session,
-    tx: dict,
-    batch: dict | None = None,
-    assessment: dict | None = None,
-    with_explanation: bool = True,
-    seal: bool = True,
-    now: datetime | None = None,
-) -> dict:
-    """Persist a transaction with its assessment and route it (pool or quarantine)."""
-    if session.get(Transaction, tx["id"]):
-        raise PipelineError(f"Transaction {tx['id']} already exists.")
-    if assessment is None:
-        _, assessment = assess(session, tx, with_explanation)
-    if not tx.get("signature"):
-        tx["signature"] = identity.sign(tx, tx["seller_id"])
+def store(session: Session, tx: dict, assessment: dict, batch: dict | None, now: datetime | None) -> None:
+    """Persist the off-chain copy (full invoice data + assessment). Does not commit."""
     ensure_batch(session, tx, batch)
-    session.add(Transaction(**tx))
+    session.add(Transaction(**{k: v for k, v in tx.items() if k != "signature_valid"}))
     session.add(
         Assessment(
             tx_id=tx["id"],
@@ -111,43 +111,84 @@ def ingest(
             created_at=now or datetime.now(),
         )
     )
+
+
+def ingest(
+    session: Session,
+    tx: dict,
+    batch: dict | None = None,
+    assessment: dict | None = None,
+    with_explanation: bool = True,
+    now: datetime | None = None,
+    chain: Chain | None = None,
+) -> dict:
+    """Score a transaction and record it in the AgriChainLedger contract."""
+    chain = chain or get_chain()
+    if session.get(Transaction, tx["id"]):
+        raise PipelineError(f"Transaction {tx['id']} already exists.")
+    if assessment is None:
+        _, assessment = assess(session, tx, with_explanation, chain)
+    on_chain = None
+    if assessment.get("signature_valid", True):
+        try:
+            rcpt = chain.record(tx, tx["signature"], assessment, fraud_code(assessment["pred_type"]))
+        except ChainRevert as e:
+            raise PipelineError(f"The smart contract rejected the transaction: {e}") from e
+        on_chain = {"tx_hash": rcpt.tx_hash, "block": rcpt.block, "gas_used": rcpt.gas_used}
+    store(session, tx, assessment, batch, now)
     session.flush()
-    if assessment["decision"] in DECISION_TO_STATUS:
-        ledger.enqueue(
-            session, tx["id"], DECISION_TO_STATUS[assessment["decision"]], now=now or tx["timestamp"]
+    if on_chain:
+        session.add(
+            LedgerEntry(
+                tx_id=tx["id"],
+                status=STATUS_FOR_DECISION[assessment["decision"]],
+                record_tx_hash=on_chain["tx_hash"],
+                record_block=on_chain["block"],
+            )
         )
     session.commit()
-    sealed = ledger.seal_pending(session, now=now) if seal else []
     return {
         "tx_id": tx["id"],
         **{k: v for k, v in assessment.items() if k != "features"},
         "signature": tx["signature"],
-        "sealed_blocks": [b.index for b in sealed],
+        "on_chain": on_chain,
     }
 
 
 def review(
-    session: Session, tx_id: str, action: str, note: str, now: datetime | None = None, seal: bool = True
+    session: Session,
+    tx_id: str,
+    action: str,
+    note: str,
+    now: datetime | None = None,
+    chain: Chain | None = None,
 ) -> dict:
+    """Auditor verdict, sent on-chain by the auditor account."""
+    chain = chain or get_chain()
     a = session.get(Assessment, tx_id)
     if a is None or a.decision != "QUARANTINED":
         raise PipelineError("Transaction is not in quarantine.")
     if session.get(Review, tx_id):
         raise PipelineError("Transaction was already reviewed.")
     status = "APPROVED" if action == "approve" else "REJECTED"
+    entry = session.get(LedgerEntry, tx_id)
+    on_chain = None
+    if entry is None:
+        # Never reached the chain: its seller signature is invalid.
+        if action == "approve":
+            tx = session.get(Transaction, tx_id)
+            try:
+                chain.record(tx, tx.signature, {**a.model_dump(), "decision": "CLEAR"}, 0)
+            except ChainRevert as e:
+                raise PipelineError(
+                    f"Cannot approve: the smart contract refuses this invoice — {e}. "
+                    "Only the real seller's signature is accepted. Reject it instead."
+                ) from e
+    else:
+        rcpt = chain.resolve(tx_id, action == "approve", note)
+        entry.status = status
+        entry.verdict_tx_hash, entry.verdict_block = rcpt.tx_hash, rcpt.block
+        on_chain = {"tx_hash": rcpt.tx_hash, "block": rcpt.block}
     session.add(Review(tx_id=tx_id, action=status, note=note, reviewed_at=now or datetime.now()))
-    ledger.enqueue(session, tx_id, status, now=now)
     session.commit()
-    sealed = ledger.seal_pending(session, force=True, now=now) if seal else []
-    return {"tx_id": tx_id, "status": status, "sealed_blocks": [b.index for b in sealed]}
-
-
-def ledger_info(session: Session, tx_id: str) -> dict:
-    e = session.get(LedgerEntry, tx_id)
-    r = session.get(Review, tx_id)
-    return {
-        "ledger_status": e.status if e else ("PENDING_REVIEW" if not r else r.action),
-        "block_index": e.block_index if e else None,
-        "tx_hash": e.tx_hash if e and e.tx_hash else None,
-        "review": r.model_dump() if r else None,
-    }
+    return {"tx_id": tx_id, "status": status, "on_chain": on_chain}
