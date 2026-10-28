@@ -292,6 +292,11 @@ export default function Check() {
                 on={tx.organic_cert_valid}
                 set={(v) => set("organic_cert_valid", v)}
               />
+              <CheckBox
+                label="Forge signature (signed by someone else)"
+                on={!!tx.forge_signature}
+                set={(v) => set("forge_signature", v)}
+              />
             </div>
           </div>
           {score.error && (

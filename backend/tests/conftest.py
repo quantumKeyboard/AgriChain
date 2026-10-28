@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -8,6 +9,11 @@ import pytest
 _TMP = Path(tempfile.mkdtemp()) / "test.db"
 os.environ["DB_URL"] = f"sqlite:///{_TMP.as_posix()}"
 os.environ["DEMO_MODE"] = "true"
+
+# Work on a copy of the model artifacts so a test retrain never overwrites the committed model.
+_ART = Path(tempfile.mkdtemp()) / "artifacts"
+shutil.copytree(Path(__file__).resolve().parent.parent / "artifacts", _ART)
+os.environ["ARTIFACTS_DIR"] = str(_ART)
 
 
 @pytest.fixture(scope="session")

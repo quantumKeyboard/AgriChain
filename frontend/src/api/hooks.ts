@@ -5,6 +5,9 @@ import type {
   BatchSummary,
   BlockDetail,
   BlockSummary,
+  FeedbackSummary,
+  HistoryEntry,
+  RetrainResult,
   Heatmap,
   Meta,
   ModelReport,
@@ -149,6 +152,20 @@ export function useDecision() {
 
 export function useScore() {
   return useMutation({ mutationFn: (tx: TxInput) => api.post<Assessment>("/transactions/score", tx) });
+}
+
+export const useFeedback = () =>
+  useQuery({ queryKey: ["feedback"], queryFn: () => api.get<FeedbackSummary>("/model/feedback") });
+
+export const useModelHistory = () =>
+  useQuery({ queryKey: ["model-history"], queryFn: () => api.get<HistoryEntry[]>("/model/history") });
+
+export function useRetrain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<RetrainResult>("/model/retrain"),
+    onSuccess: () => qc.invalidateQueries(),
+  });
 }
 
 export function useSubmit() {

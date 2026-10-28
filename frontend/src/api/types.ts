@@ -58,6 +58,9 @@ export interface TxView {
   block_index: number | null;
   tx_hash: string | null;
   review: { action: string; note: string; reviewed_at: string } | null;
+  signature: string;
+  signature_valid: boolean;
+  seller_public_key: string | null;
 }
 
 export interface Assessment {
@@ -208,6 +211,7 @@ export interface ModelReport {
   }[];
   score_hist: { bin: number; legit: number; fraud: number }[];
   feature_importance: { feature: string; label: string; importance: number }[];
+  feedback?: { rows: number; approved: number; rejected: number; weight: number };
 }
 
 export interface Metrics {
@@ -304,4 +308,39 @@ export type TxInput = Omit<
   | "total_value"
   | "id"
   | "timestamp"
-> & { batch?: Record<string, unknown> | null };
+  | "signature"
+  | "signature_valid"
+  | "seller_public_key"
+> & { batch?: Record<string, unknown> | null; forge_signature?: boolean };
+
+export interface FeedbackSummary {
+  reviews: number;
+  approved: number;
+  rejected: number;
+  usable_labels: number;
+  label_counts: Record<string, number>;
+}
+
+export interface Headline {
+  pr_auc: number;
+  roc_auc: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  shifted_f1: number;
+}
+
+export interface RetrainResult {
+  previous_version: string;
+  model_version: string;
+  feedback: { rows: number; approved: number; rejected: number; weight: number };
+  before: Headline;
+  after: Headline;
+  note: string;
+}
+
+export interface HistoryEntry extends Headline {
+  model_version: string;
+  trained_at: string;
+  feedback_rows: number;
+}

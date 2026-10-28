@@ -1,5 +1,8 @@
 const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
+/** Absolute URL for a file download (CSV export), e.g. exportUrl("transactions.csv"). */
+export const exportUrl = (file: string) => `${BASE}/api/export/${file}`;
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {

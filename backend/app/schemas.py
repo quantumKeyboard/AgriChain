@@ -5,9 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.sim.generator import CROP_NAMES, FRAUD_TYPES, STAGES
+from app.sim.generator import CROP_NAMES, INJECTABLE_TYPES, STAGES
 
-FraudType = Literal[tuple(FRAUD_TYPES)]  # type: ignore[valid-type]
+FraudType = Literal[tuple(INJECTABLE_TYPES)]  # type: ignore[valid-type]
 
 
 class BatchIn(BaseModel):
@@ -42,6 +42,8 @@ class TransactionIn(BaseModel):
     cold_chain_ok_claimed: bool = False
     payment_mode: Literal["BANK", "UPI", "CASH"] = "BANK"
     batch: BatchIn | None = None
+    # Demo: sign with a different participant's key to simulate identity spoofing.
+    forge_signature: bool = False
 
 
 class DecisionIn(BaseModel):
@@ -56,4 +58,4 @@ class SimStepIn(BaseModel):
 
 class TamperIn(BaseModel):
     block_index: int | None = None
-    mode: Literal["quantity", "verdict", "header"] = "quantity"
+    mode: Literal["quantity", "verdict", "header", "rewrite"] = "quantity"

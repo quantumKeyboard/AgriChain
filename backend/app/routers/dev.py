@@ -56,6 +56,16 @@ def tamper(body: TamperIn, session: Session = Depends(get_session)) -> dict:
     tx.quantity_kg = round(tx.quantity_kg * 10, 1)
     tx.total_value = round(tx.quantity_kg * tx.unit_price, 2)
     session.commit()
+    if body.mode == "rewrite":
+        # A sophisticated attacker also recomputes every hash and re-mines the chain from here.
+        remined = ledger.remine_from(session, block.index)
+        return {
+            "block_index": block.index,
+            "tx_id": tx.id,
+            "mode": "rewrite",
+            "change": f"Quantity edited {before:,.0f} kg → {tx.quantity_kg:,.0f} kg, then {remined} "
+            "blocks re-mined so every hash and link is valid again",
+        }
     return {
         "block_index": block.index,
         "tx_id": tx.id,

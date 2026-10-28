@@ -1,11 +1,13 @@
 """A small, fully-inspectable blockchain ledger.
 
 * Every transaction's on-chain record = SHA-256 of a canonical JSON of its immutable
-  fields plus its final ledger status (COMMITTED / FLAGGED / APPROVED / REJECTED).
+  fields, the seller's Ed25519 signature, and its final ledger status
+  (COMMITTED / FLAGGED / APPROVED / REJECTED).
 * Blocks hold a Merkle root of those hashes, the previous block's hash, and a nonce
   found by proof-of-work (hash must start with `difficulty` hex zeros).
 * `verify_chain` recomputes everything from the database, so any edit to a stored
-  transaction, verdict or block header is detected and located.
+  transaction, verdict or block header is detected and located. It also checks every
+  seller signature, which catches an attacker who edits data and then re-mines the chain.
 """
 
 from __future__ import annotations
@@ -16,51 +18,25 @@ from datetime import datetime
 
 from sqlmodel import Session, col, select
 
+from app.chain.identity import SIGNED_FIELDS, canon
+from app.chain.identity import verify as verify_signature
 from app.config import settings
-from app.models import Block, LedgerEntry, Transaction
+from app.models import Assessment, Block, LedgerEntry, Participant, Transaction
 
 GENESIS_PREV = "0" * 64
 
-# Fields that make up a transaction's on-chain identity. `sim_label` is deliberately excluded.
-HASHED_FIELDS = [
-    "id",
-    "batch_id",
-    "crop",
-    "stage",
-    "seller_id",
-    "buyer_id",
-    "timestamp",
-    "quantity_kg",
-    "unit_price",
-    "total_value",
-    "ref_price",
-    "quality_grade",
-    "moisture_pct",
-    "organic_claimed",
-    "organic_cert_valid",
-    "transit_km",
-    "transit_hours",
-    "temp_avg_c",
-    "temp_max_c",
-    "cold_chain_ok_claimed",
-    "payment_mode",
-]
+# A record's identity = the seller-signed fields (see identity.py). `sim_label` is excluded.
+HASHED_FIELDS = SIGNED_FIELDS
+_canon = canon
 
 
 def sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _canon(value):
-    if isinstance(value, datetime):
-        return value.isoformat(timespec="seconds")
-    if isinstance(value, float):
-        return round(value, 4)
-    return value
-
-
 def tx_hash(tx: Transaction, status: str) -> str:
     payload = {f: _canon(getattr(tx, f)) for f in HASHED_FIELDS}
+    payload["signature"] = tx.signature
     payload["ledger_status"] = status
     return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
@@ -220,7 +196,55 @@ def verify_block(session: Session, block: Block, prev: Block | None) -> tuple[bo
     expected_prev = prev.hash if prev else GENESIS_PREV
     if block.prev_hash != expected_prev:
         return False, "Broken link — previous-hash pointer does not match the previous block.", []
+    forged = [
+        e.tx_id
+        for e in entries
+        if not signature_ok(session, session.get(Transaction, e.tx_id)) and not rejected_forgery(session, e)
+    ]
+    if forged:
+        return (
+            False,
+            "Seller signature invalid — transaction content no longer matches what the seller signed "
+            f"({', '.join(forged)}). Hashes were recomputed to hide the edit, but signatures cannot be.",
+            forged,
+        )
     return True, None, []
+
+
+def rejected_forgery(session: Session, entry: LedgerEntry) -> bool:
+    """Forged invoices are sealed as REJECTED evidence; their signature is invalid by design."""
+    if entry.status != "REJECTED":
+        return False
+    a = session.get(Assessment, entry.tx_id)
+    return a is not None and a.pred_type == "forged_signature"
+
+
+def signature_ok(session: Session, tx: Transaction | None) -> bool:
+    if tx is None:
+        return False
+    seller = session.get(Participant, tx.seller_id)
+    return verify_signature(tx, tx.signature, seller.public_key if seller else None)
+
+
+def remine_from(session: Session, start_index: int) -> int:
+    """Recompute record hashes, Merkle roots and PoW from `start_index` to the tip.
+
+    Used only by the demo "rewrite history" attack: it makes every hash and link valid again,
+    so the only thing left to catch the edit is the seller signature.
+    """
+    blocks = list(session.exec(select(Block).where(Block.index >= start_index).order_by(Block.index)).all())
+    prev = session.get(Block, start_index - 1) if start_index > 0 else None
+    for b in blocks:
+        hashes = []
+        for e in block_entries(session, b.index):
+            e.tx_hash = tx_hash(session.get(Transaction, e.tx_id), e.status)
+            hashes.append(e.tx_hash)
+        b.merkle_root = merkle_root(hashes)
+        b.prev_hash = prev.hash if prev else GENESIS_PREV
+        b.nonce, b.hash = mine(b.index, b.timestamp, b.prev_hash, b.merkle_root, b.difficulty)
+        prev = b
+    session.commit()
+    return len(blocks)
 
 
 def verify_chain(session: Session) -> dict:

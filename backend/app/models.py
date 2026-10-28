@@ -13,6 +13,7 @@ class Participant(SQLModel, table=True):
     registered_on: NaiveDatetime
     land_acres: float | None = None
     capacity_tons: float | None = None
+    public_key: str = ""  # Ed25519, hex
 
 
 class Batch(SQLModel, table=True):
@@ -47,6 +48,7 @@ class Transaction(SQLModel, table=True):
     temp_max_c: float
     cold_chain_ok_claimed: bool
     payment_mode: str
+    signature: str = ""  # seller's Ed25519 signature over the canonical payload, hex
     # Ground truth from the simulator (None for hand-entered tx). Never used for scoring.
     sim_label: str | None = None
 
@@ -72,6 +74,13 @@ class Review(SQLModel, table=True):
     action: str  # APPROVED / REJECTED
     note: str = ""
     reviewed_at: NaiveDatetime
+
+
+class AppMeta(SQLModel, table=True):
+    """Key/value store; holds the schema version so old local databases are re-seeded, not crashed on."""
+
+    key: str = Field(primary_key=True)
+    value: str
 
 
 class Block(SQLModel, table=True):

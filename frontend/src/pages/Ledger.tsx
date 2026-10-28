@@ -1,7 +1,17 @@
-import { AlertOctagon, Boxes, Hammer, Link2, RotateCcw, ShieldCheck, Skull } from "lucide-react";
+import {
+  AlertOctagon,
+  Boxes,
+  Download,
+  Hammer,
+  KeyRound,
+  Link2,
+  RotateCcw,
+  ShieldCheck,
+  Skull,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api } from "../api/client";
+import { api, exportUrl } from "../api/client";
 import { useBlock, useBlocks, useHealth, useRefreshAll, useVerify } from "../api/hooks";
 import type { VerifyResult } from "../api/types";
 import { TxDrawer } from "../components/TxDrawer";
@@ -66,13 +76,22 @@ export default function Ledger() {
                 : undefined
             }
             right={
-              <button
-                onClick={runVerify}
-                disabled={verify.isPending}
-                className="btn-gold flex items-center gap-1.5 px-4 py-2 text-sm"
-              >
-                <ShieldCheck size={15} /> {verify.isPending ? "Verifying…" : "Verify chain"}
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={exportUrl("chain.csv")}
+                  className="btn-ghost flex items-center gap-1.5 px-3 py-2 text-xs"
+                  title="Download all block headers as CSV"
+                >
+                  <Download size={14} /> CSV
+                </a>
+                <button
+                  onClick={runVerify}
+                  disabled={verify.isPending}
+                  className="btn-gold flex items-center gap-1.5 px-4 py-2 text-sm"
+                >
+                  <ShieldCheck size={15} /> {verify.isPending ? "Verifying…" : "Verify chain"}
+                </button>
+              </div>
             }
           />
           {vr && (
@@ -98,7 +117,7 @@ export default function Ledger() {
                 <p className="mt-0.5 text-xs opacity-90">
                   {vr.valid
                     ? "Every transaction hash, Merkle root, proof-of-work and previous-hash link was recomputed from the database and matches."
-                    : `${vr.reason} Every later block is now untrustworthy because its link points at a block whose contents changed.`}
+                    : `${vr.reason} Every block after it builds on altered history, so it can't be trusted either.`}
                 </p>
               </div>
             </div>
@@ -204,7 +223,7 @@ function DemoPanel({ onDone, onVerify }: { onDone: () => void; onVerify: () => P
     }
   };
 
-  const tamper = (mode: "quantity" | "verdict" | "header") =>
+  const tamper = (mode: "quantity" | "verdict" | "header" | "rewrite") =>
     run(mode, async () => {
       const r = await api.post<{ block_index: number; change: string; tx_id?: string }>("/dev/tamper", {
         mode,
@@ -239,6 +258,13 @@ function DemoPanel({ onDone, onVerify }: { onDone: () => void; onVerify: () => P
           body="Breaks the proof-of-work / header hash."
           onClick={() => tamper("header")}
           busy={busy === "header"}
+        />
+        <DemoButton
+          icon={<KeyRound size={15} />}
+          title="Rewrite history and re-mine"
+          body="Edit a record, recompute every hash and redo the proof-of-work. Only signatures catch it."
+          onClick={() => tamper("rewrite")}
+          busy={busy === "rewrite"}
         />
         <button
           onClick={() =>
@@ -292,6 +318,8 @@ function DemoButton({
 
 function BlockPanel({ index, onOpenTx }: { index: number; onOpenTx: (id: string) => void }) {
   const { data: b, isLoading, error, refetch } = useBlock(index);
+  const [proofPos, setProofPos] = useState<number | null>(null);
+  useEffect(() => setProofPos(null), [index]);
   if (isLoading)
     return (
       <Card>
@@ -332,22 +360,34 @@ function BlockPanel({ index, onOpenTx }: { index: number; onOpenTx: (id: string)
           </div>
         </dl>
         {b.entries.length > 0 && (
-          <MerkleTree leaves={b.entries.map((e) => e.recomputed_hash ?? e.tx_hash)} root={b.merkle_root} />
+          <MerkleTree
+            leaves={b.entries.map((e) => e.recomputed_hash ?? e.tx_hash)}
+            root={b.merkle_root}
+            highlight={proofPos}
+            label={proofPos !== null ? b.entries[proofPos]?.tx?.id : undefined}
+          />
         )}
       </Card>
       <Card className="lg:col-span-7">
-        <CardTitle title="Transaction records" sub="Stored hash vs. hash recomputed from today's database" />
+        <CardTitle
+          title="Transaction records"
+          sub="Stored hash vs. recomputed hash, and the seller's signature · Prove = Merkle inclusion proof"
+        />
         {b.entries.length === 0 ? (
           <p className="text-sm text-muted">Genesis block — no transactions.</p>
         ) : (
           <ul className="space-y-2">
             {b.entries.map((e) => (
-              <li key={e.position}>
-                <button
-                  onClick={() => e.tx && onOpenTx(e.tx.id)}
-                  className={`card-inner w-full p-3 text-left transition hover:border-gold/50 ${e.tampered ? "!border-quar" : ""}`}
-                >
-                  <div className="flex flex-wrap items-center gap-3">
+              <li
+                key={e.position}
+                className={`card-inner p-3 transition hover:border-gold/50 ${e.tampered ? "!border-quar" : ""}`}
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => e.tx && onOpenTx(e.tx.id)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    title="Open transaction details"
+                  >
                     <span className="text-xl" aria-hidden>
                       {e.tx ? CROP_EMOJI[e.tx.crop] : "?"}
                     </span>
@@ -357,17 +397,38 @@ function BlockPanel({ index, onOpenTx }: { index: number; onOpenTx: (id: string)
                         {e.tx?.seller_name} → {e.tx?.buyer_name} · {e.tx ? inrCompact(e.tx.total_value) : ""}
                       </span>
                     </span>
-                    <StatusBadge status={e.status} small />
-                  </div>
-                  <div className="mt-2 grid gap-1 font-mono text-[10px]">
-                    <span className="text-muted">
-                      stored&nbsp;&nbsp;&nbsp;&nbsp;{shortHash(e.tx_hash, 20)}
+                  </button>
+                  <StatusBadge status={e.status} small />
+                  <button
+                    onClick={() => setProofPos(proofPos === e.position ? null : e.position)}
+                    aria-pressed={proofPos === e.position}
+                    title="Show the Merkle inclusion proof for this record"
+                    className={`pill border px-2 py-0.5 text-[10px] font-medium ${
+                      proofPos === e.position
+                        ? "border-gold bg-gold text-gold-ink"
+                        : "border-line text-ink-2 hover:border-gold"
+                    }`}
+                  >
+                    Prove
+                  </button>
+                </div>
+                <div className="mt-2 grid gap-1 font-mono text-[10px]">
+                  <span className="text-muted">stored&nbsp;&nbsp;&nbsp;&nbsp;{shortHash(e.tx_hash, 20)}</span>
+                  <span className={e.recomputed_hash !== e.tx_hash ? "text-quar-ink" : "text-clear-ink"}>
+                    recomputed {shortHash(e.recomputed_hash, 20)}{" "}
+                    {e.recomputed_hash !== e.tx_hash ? "✗ MISMATCH" : "✓ matches"}
+                  </span>
+                  {e.tx && (
+                    <span className={e.tx.signature_valid ? "text-clear-ink" : "text-quar-ink"}>
+                      signature&nbsp;{" "}
+                      {e.tx.signature_valid
+                        ? "✓ valid for seller's key"
+                        : e.status === "REJECTED"
+                          ? "✗ forged (sealed as rejected evidence)"
+                          : "✗ INVALID"}
                     </span>
-                    <span className={e.tampered ? "text-quar-ink" : "text-clear-ink"}>
-                      recomputed {shortHash(e.recomputed_hash, 20)} {e.tampered ? "✗ MISMATCH" : "✓"}
-                    </span>
-                  </div>
-                </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -402,9 +463,22 @@ async function sha256(text: string): Promise<string> {
     .join("");
 }
 
-/** Rebuilds the Merkle tree in the browser from the stored leaf hashes — same algorithm as the backend. */
-function MerkleTree({ leaves, root }: { leaves: string[]; root: string }) {
+/** Rebuilds the Merkle tree in the browser from today's record hashes — same algorithm as the backend.
+ *  With `highlight`, shows the inclusion proof for that leaf: its path (gold) and the sibling hashes
+ *  (dashed) a verifier needs. */
+function MerkleTree({
+  leaves,
+  root,
+  highlight = null,
+  label,
+}: {
+  leaves: string[];
+  root: string;
+  highlight?: number | null;
+  label?: string;
+}) {
   const [levels, setLevels] = useState<string[][] | null>(null);
+  const key = leaves.join(",");
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -422,10 +496,14 @@ function MerkleTree({ leaves, root }: { leaves: string[]; root: string }) {
     return () => {
       alive = false;
     };
-  }, [leaves]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
   if (!levels) return null;
   const computedRoot = levels[levels.length - 1][0];
   const match = computedRoot === root;
+  // Path index per level (bottom-up) for the highlighted leaf.
+  const pathIdx = highlight === null ? [] : levels.map((_, d) => highlight >> d);
+  const siblings = levels.length - 1;
   return (
     <div className="mt-5">
       <p className="mb-2 text-[11px] uppercase tracking-wider text-muted">
@@ -433,31 +511,48 @@ function MerkleTree({ leaves, root }: { leaves: string[]; root: string }) {
       </p>
       <div className="space-y-2">
         {levels
-          .slice()
+          .map((lvl, d) => ({ lvl, d }))
           .reverse()
-          .map((lvl, i) => (
-            <div key={i} className="flex justify-center gap-1.5">
-              {lvl.map((h, j) => (
-                <span
-                  key={j}
-                  title={h}
-                  className={`rounded-lg border px-1.5 py-1 font-mono text-[9px] ${
-                    i === 0
-                      ? match
-                        ? "border-gold/60 text-gold"
-                        : "border-quar text-quar-ink"
-                      : "border-line text-muted"
-                  }`}
-                >
-                  {h.slice(0, 6)}
-                </span>
-              ))}
+          .map(({ lvl, d }) => (
+            <div key={d} className="flex justify-center gap-1.5">
+              {lvl.map((h, j) => {
+                const isRoot = d === levels.length - 1;
+                const onPath = highlight !== null && pathIdx[d] === j;
+                const isSibling = highlight !== null && !isRoot && (pathIdx[d] ^ 1) === j;
+                const base = isRoot
+                  ? match
+                    ? "border-gold/60 text-gold"
+                    : "border-quar text-quar-ink"
+                  : "border-line text-muted";
+                return (
+                  <span
+                    key={j}
+                    title={h}
+                    className={`rounded-lg border px-1.5 py-1 font-mono text-[9px] transition ${
+                      onPath
+                        ? "border-gold bg-gold text-gold-ink"
+                        : isSibling
+                          ? "border-dashed border-gold text-gold"
+                          : base
+                    }`}
+                  >
+                    {h.slice(0, 6)}
+                  </span>
+                );
+              })}
             </div>
           ))}
       </div>
       <p className={`mt-2 text-center text-[11px] ${match ? "text-clear-ink" : "text-quar-ink"}`}>
         {match ? "✓ Root matches the block header" : "✗ Root differs from the block header"}
       </p>
+      {highlight !== null && (
+        <p className="mt-2 rounded-2xl bg-panel-2 px-3 py-2 text-center text-[11px] text-ink-2">
+          Inclusion proof for <span className="font-mono text-gold">{label}</span>: hash it with the{" "}
+          {siblings} dashed sibling hash{siblings === 1 ? "" : "es"} going up — if you reach the root, the
+          record is in this block. {siblings} hashes instead of all {leaves.length} records.
+        </p>
+      )}
     </div>
   );
 }

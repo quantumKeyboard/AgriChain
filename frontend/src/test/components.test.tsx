@@ -2,7 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { RuleList, ShapBars } from "../components/Explain";
 import { RiskSun } from "../components/RiskSun";
+import { SignatureLine } from "../components/TxDrawer";
 import { StatusBadge } from "../components/ui";
+import type { TxView } from "../api/types";
 import { decisionFor, inrCompact, kg, shortHash } from "../lib/format";
 
 describe("RiskSun", () => {
@@ -70,5 +72,17 @@ describe("format helpers", () => {
     expect(decisionFor(0.1)).toBe("CLEAR");
     expect(decisionFor(0.5)).toBe("FLAGGED");
     expect(decisionFor(0.7)).toBe("QUARANTINED");
+  });
+});
+
+describe("SignatureLine", () => {
+  const base = { signature: "ab".repeat(32), seller_public_key: "cd".repeat(16) } as const;
+  it("shows a valid seller signature", () => {
+    render(<SignatureLine tx={{ ...base, signature_valid: true } as unknown as TxView} />);
+    expect(screen.getByText(/Seller signature valid/)).toBeInTheDocument();
+  });
+  it("flags a signature that does not match the seller key", () => {
+    render(<SignatureLine tx={{ ...base, signature_valid: false } as unknown as TxView} />);
+    expect(screen.getByText(/does NOT match/)).toBeInTheDocument();
   });
 });

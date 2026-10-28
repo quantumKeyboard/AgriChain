@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, col, select
 
+from app.chain import identity
 from app.db import get_session
 from app.ml.features import FEATURE_LABELS
 from app.models import Assessment, Review, Transaction
@@ -16,14 +17,21 @@ router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
 def to_raw(body: TransactionIn) -> tuple[dict, dict | None]:
-    data = body.model_dump(exclude={"batch"})
+    data = body.model_dump(exclude={"batch", "forge_signature"})
     data["id"] = data["id"] or get_sim()._new_id("TX")
     data["timestamp"] = data["timestamp"] or datetime.now()
     if data["ref_price"] is None:
         data["ref_price"] = reference_price(data["crop"], data["stage"], data["timestamp"])
     data["total_value"] = round(data["quantity_kg"] * data["unit_price"], 2)
     data["sim_label"] = None
+    if body.forge_signature:
+        # Someone other than the seller signs the invoice (identity spoofing demo).
+        data["signature"] = identity.sign(data, forger_for(data["seller_id"]))
     return data, body.batch.model_dump() if body.batch else None
+
+
+def forger_for(seller_id: str) -> str:
+    return "D-001" if seller_id != "D-001" else "D-002"
 
 
 def present(result: dict) -> dict:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlmodel import Session, select
 
+from app.chain import identity
 from app.models import Assessment, LedgerEntry, Participant, Review, Transaction
 from app.sim.generator import FRAUD_LABELS
 
@@ -27,6 +28,8 @@ def tx_view(
     out["seller_role"] = seller.role if seller else None
     out["buyer_role"] = buyer.role if buyer else None
     out["region"] = seller.region if seller else None
+    out["seller_public_key"] = seller.public_key if seller else None
+    out["signature_valid"] = identity.verify(tx, tx.signature, seller.public_key if seller else None)
     if a:
         out.update(
             {

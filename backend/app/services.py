@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from sqlmodel import Session, or_, select
 
-from app.chain import ledger
+from app.chain import identity, ledger
 from app.ml.explain import explain
 from app.ml.features import compute_features, history_from_records
 from app.ml.scorer import score_one
@@ -46,10 +46,15 @@ def assess(session: Session, tx: dict, with_explanation: bool = True) -> tuple[d
         raise PipelineError("Unknown seller or buyer id.")
     if seller.id == buyer.id:
         raise PipelineError("Seller and buyer must be different participants.")
+    if not tx.get("signature"):
+        # Demo custody: the platform signs on the seller's behalf (see identity.py).
+        tx["signature"] = identity.sign(tx, seller.id)
+    signature_valid = identity.verify(tx, tx["signature"], seller.public_key)
     sd = participant_dict(seller)
     hist = history_from_records(tx, sd, history_records(session, tx))
     feats = compute_features(tx, sd, hist)
-    result = score_one(tx, feats)
+    result = score_one({**tx, "signature_valid": signature_valid}, feats)
+    result["signature_valid"] = signature_valid
     result["shap_top"] = explain(feats) if with_explanation else None
     result["features"] = feats
     return feats, result
@@ -85,6 +90,8 @@ def ingest(
         raise PipelineError(f"Transaction {tx['id']} already exists.")
     if assessment is None:
         _, assessment = assess(session, tx, with_explanation)
+    if not tx.get("signature"):
+        tx["signature"] = identity.sign(tx, tx["seller_id"])
     ensure_batch(session, tx, batch)
     session.add(Transaction(**tx))
     session.add(
@@ -114,6 +121,7 @@ def ingest(
     return {
         "tx_id": tx["id"],
         **{k: v for k, v in assessment.items() if k != "features"},
+        "signature": tx["signature"],
         "sealed_blocks": [b.index for b in sealed],
     }
 

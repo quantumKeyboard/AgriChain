@@ -9,3 +9,4 @@ shap
 joblib
 python-dotenv
 networkx
+cryptography

@@ -8,10 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
 from app.config import settings
-from app.db import engine, init_db
+from app.db import engine, init_db, schema_is_current
 from app.ml.scorer import load_bundle
 from app.models import Participant
-from app.routers import batches, chain, model, network, quarantine, sim, stats, transactions
+from app.routers import batches, chain, export, model, network, quarantine, sim, stats, transactions
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("agrichain")
@@ -19,23 +19,24 @@ log = logging.getLogger("agrichain")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    current = schema_is_current()
     init_db()
     load_bundle()
     with Session(engine) as s:
-        if s.exec(select(Participant)).first() is None:
+        if not current or s.exec(select(Participant)).first() is None:
             from app.sim.state import seed_demo
 
-            log.info("Empty database — seeding demo data")
+            log.info("Empty or outdated database — seeding demo data")
             log.info("seeded: %s", seed_demo(s))
     yield
 
 
-app = FastAPI(title="AgriChain Sentinel API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AgriChain Sentinel API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"]
 )
 
-for r in (transactions, quarantine, chain, batches, stats, sim, model, network):
+for r in (transactions, quarantine, chain, batches, stats, sim, model, network, export):
     app.include_router(r.router)
 
 if settings.demo_mode:

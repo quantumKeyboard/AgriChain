@@ -199,6 +199,7 @@ const FRAUD_HINT: Record<string, string> = {
   cold_chain_concealed: "hidden heat breach",
   circular_trading: "A→B→C→A",
   duplicate_invoice: "re-submitted bill",
+  forged_signature: "wrong signer key",
 };
 
 function Toasts() {

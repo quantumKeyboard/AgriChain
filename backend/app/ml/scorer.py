@@ -54,6 +54,9 @@ def score_many(txs: list[dict], feats_list: list[dict[str, float]]) -> list[dict
         risk = float(np.clip(blend(p_fraud[i], r, anomaly[i]), 0, 1))
         fraud_probs = {c: float(proba[i, j]) for j, c in enumerate(classes) if c != "none"}
         pred_type = max(fraud_probs, key=fraud_probs.get) if risk >= settings.flag_threshold else "none"
+        if any(h["id"] == "SIGNATURE_INVALID" for h in hits):
+            # Cryptographic proof of forgery is a hard gate, not a weighted signal.
+            risk, pred_type = max(risk, 0.99), "forged_signature"
         out.append(
             {
                 "risk": round(risk, 4),

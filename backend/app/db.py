@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 
-from sqlalchemy import event
+from sqlalchemy import event, inspect
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.config import DATA_DIR, settings
@@ -18,6 +18,19 @@ def _sqlite_pragmas(dbapi_conn, _record) -> None:  # pragma: no cover - trivial
     cur.execute("PRAGMA journal_mode=WAL")
     cur.execute("PRAGMA synchronous=NORMAL")
     cur.close()
+
+
+# Bump when tables change shape; an older local database is then wiped and re-seeded.
+SCHEMA_VERSION = "2"
+
+
+def schema_is_current() -> bool:
+    insp = inspect(engine)
+    if not insp.has_table("appmeta") or not insp.has_table("transaction"):
+        return False
+    with engine.connect() as conn:
+        row = conn.exec_driver_sql("SELECT value FROM appmeta WHERE key = 'schema_version'").first()
+    return bool(row) and row[0] == SCHEMA_VERSION
 
 
 def init_db() -> None:

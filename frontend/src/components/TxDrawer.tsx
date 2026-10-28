@@ -1,4 +1,4 @@
-import { Link2, Route, X } from "lucide-react";
+import { KeyRound, Link2, Route, X } from "lucide-react";
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useTransaction } from "../api/hooks";
@@ -130,6 +130,7 @@ export function TxDetail({ tx, compact = false }: { tx: TxView; compact?: boolea
               : "Waiting in the mempool for the next block."}
           </p>
         )}
+        <SignatureLine tx={tx} />
         {tx.review && (
           <p className="text-muted">
             Auditor: <span className="text-ink-2">{tx.review.action}</span> — “{tx.review.note || "no note"}”
@@ -154,5 +155,23 @@ function Info({ k, v }: { k: string; v: string }) {
         {v}
       </p>
     </div>
+  );
+}
+
+/** Seller's Ed25519 signature status. */
+export function SignatureLine({ tx }: { tx: TxView }) {
+  return (
+    <p className={`flex items-start gap-1.5 ${tx.signature_valid ? "text-clear-ink" : "text-quar-ink"}`}>
+      <KeyRound size={13} className="mt-0.5 shrink-0" aria-hidden />
+      <span>
+        {tx.signature_valid
+          ? "Seller signature valid (Ed25519)"
+          : "Signature does NOT match the seller's registered key"}
+        <span className="block font-mono text-[10px] text-muted">
+          sig {tx.signature ? `${tx.signature.slice(0, 16)}…` : "—"} · key{" "}
+          {tx.seller_public_key ? `${tx.seller_public_key.slice(0, 12)}…` : "—"}
+        </span>
+      </span>
+    </p>
   );
 }

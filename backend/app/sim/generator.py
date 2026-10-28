@@ -55,7 +55,11 @@ FRAUD_LABELS = {
     "cold_chain_concealed": "Concealed cold-chain breach",
     "circular_trading": "Circular trading",
     "duplicate_invoice": "Duplicate invoice",
+    "forged_signature": "Forged signature",
 }
+# Injectable from the UI: the 6 ML-learned types + identity spoofing, which is caught by
+# cryptography (an invalid seller signature), not by the model.
+INJECTABLE_TYPES = [*FRAUD_TYPES, "forged_signature"]
 
 ROLE_COUNTS = {"FARMER": 80, "COOP": 12, "PROCESSOR": 10, "DISTRIBUTOR": 14, "RETAILER": 24}
 ROLE_PREFIX = {"FARMER": "F", "COOP": "C", "PROCESSOR": "P", "DISTRIBUTOR": "D", "RETAILER": "R"}

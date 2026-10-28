@@ -17,6 +17,7 @@ import {
 import { useModelReport } from "../api/hooks";
 import type { ModelReport } from "../api/types";
 import { ChartTooltip, Legend } from "../components/charts";
+import { LearningLoop } from "../components/LearningLoop";
 import { Card, CardTitle, ErrorBox, Loading, PageTitle, Segmented } from "../components/ui";
 import { num, pct } from "../lib/format";
 import { C, axisProps, goldRamp } from "../lib/tokens";
@@ -37,6 +38,7 @@ export default function Model() {
         sub={`Hybrid detector = ${data.weights.ml} × Random Forest + ${data.weights.rules} × rule engine + ${data.weights.anomaly} × Isolation Forest. Evaluated on a held-out split and on a harder, distribution-shifted test set.`}
       />
       <Headline r={data} />
+      <LearningLoop />
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Ablation r={data} />
         <ThresholdExplorer r={data} />

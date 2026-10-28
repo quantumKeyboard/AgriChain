@@ -8,12 +8,12 @@ from datetime import datetime, timedelta
 
 from sqlmodel import Session
 
-from app.chain import ledger
-from app.db import reset_db
+from app.chain import identity, ledger
+from app.db import SCHEMA_VERSION, reset_db
 from app.ml.explain import explain
 from app.ml.features import compute_features, history_from_records
 from app.ml.scorer import score_many
-from app.models import Participant
+from app.models import AppMeta, Participant
 from app.services import ingest, review
 from app.sim.generator import SupplyChainSimulator, make_participants
 
@@ -38,7 +38,8 @@ def seed_demo(session: Session, n: int = 300, seed: int = 7, pending_quarantine:
     now = datetime.now().replace(microsecond=0)
     start = now - timedelta(minutes=9 * n)
     for p in make_participants(42, now=start):
-        session.add(Participant(**p.as_dict()))
+        session.add(Participant(**p.as_dict(), public_key=identity.public_key_hex(p.id)))
+    session.add(AppMeta(key="schema_version", value=SCHEMA_VERSION))
     session.commit()
     ledger.ensure_genesis(session, now=start - timedelta(minutes=5))
 
@@ -52,6 +53,12 @@ def seed_demo(session: Session, n: int = 300, seed: int = 7, pending_quarantine:
     for tx in txs:
         tx["timestamp"] = (start + (tx["timestamp"] - t0) * scale).replace(microsecond=0)
 
+    # A couple of identity-spoofing cases so the history shows the signature gate at work.
+    rng = random.Random(seed)
+    for i in rng.sample(range(n // 4, n - 20), 2):
+        txs[i]["sim_label"] = "forged_signature"
+        txs[i]["signature"] = identity.sign(txs[i], "D-001" if txs[i]["seller_id"] != "D-001" else "D-002")
+
     feats = []
     for tx in txs:
         seller = sim.by_id[tx["seller_id"]].as_dict()
@@ -60,7 +67,7 @@ def seed_demo(session: Session, n: int = 300, seed: int = 7, pending_quarantine:
         by_batch[tx["batch_id"]].append(tx)
         by_seller[tx["seller_id"]].append(tx)
 
-    scores = score_many(txs, feats)
+    scores = score_many([{**tx, "signature_valid": "signature" not in tx} for tx in txs], feats)
     quarantined = [i for i, s in enumerate(scores) if s["decision"] == "QUARANTINED"]
     leave_open = set(quarantined[-pending_quarantine:])
     for i, (tx, f, s) in enumerate(zip(txs, feats, scores, strict=True)):

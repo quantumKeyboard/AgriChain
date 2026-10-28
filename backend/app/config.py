@@ -7,10 +7,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
-ARTIFACTS_DIR = BACKEND_DIR / "artifacts"
-DATA_DIR = BACKEND_DIR / "data"
-
 load_dotenv(BACKEND_DIR / ".env", encoding="utf-8")
+
+# Overridable so tests (and retraining experiments) never touch the committed model.
+ARTIFACTS_DIR = Path(os.getenv("ARTIFACTS_DIR", str(BACKEND_DIR / "artifacts")))
+DATA_DIR = BACKEND_DIR / "data"
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -34,6 +35,8 @@ class Settings:
             "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
         ).split(",")
     )
+    # Seed for the deterministic demo signing keys (server-held custody keys, demo only).
+    key_seed: str = field(default_factory=lambda: os.getenv("KEY_SEED", "agrichain-demo"))
     # Risk blend weights: risk = w_ml * p_fraud + w_rules * rule_score + w_anomaly * anomaly_score
     w_ml: float = 0.60
     w_rules: float = 0.25

@@ -4,8 +4,10 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
+from app.chain import identity
 from app.db import get_session
 from app.models import Batch, Participant
+from app.routers.transactions import forger_for
 from app.schemas import SimStepIn
 from app.services import ingest
 from app.sim.generator import CROP_NAMES, CROPS, FRAUD_LABELS, REGIONS, STAGE_ROLES, STAGES
@@ -20,9 +22,16 @@ def step(body: SimStepIn, session: Session = Depends(get_session)) -> dict:
     sim = get_sim()
     now = datetime.now()
     results = []
+    forged = body.inject == "forged_signature"
+    model_inject = None if forged else body.inject
     txs = [sim.next_transaction(now=now + timedelta(milliseconds=i)) for i in range(body.n - 1)]
-    txs += sim.warmup_for(body.inject, now=now + timedelta(milliseconds=body.n))
-    txs.append(sim.next_transaction(inject=body.inject, now=now + timedelta(milliseconds=body.n + 5)))
+    txs += sim.warmup_for(model_inject, now=now + timedelta(milliseconds=body.n))
+    last = sim.next_transaction(inject=model_inject, now=now + timedelta(milliseconds=body.n + 5))
+    if forged:
+        # A legitimate-looking invoice, but signed by someone other than the seller.
+        last["sim_label"] = "forged_signature"
+        last["signature"] = identity.sign(last, forger_for(last["seller_id"]))
+    txs.append(last)
     for tx in txs:
         batch = sim.batches[tx["batch_id"]].as_dict()
         r = ingest(session, tx, batch=batch)
@@ -49,15 +58,20 @@ def example(type: str = "none", session: Session = Depends(get_session)) -> dict
     # Only build on batches whose history is actually in the DB.
     known = {b for b in session.exec(select(Batch.id)).all()}
     sim.active = [b for b in sim.active if b.id in known]
-    inject = None if type == "none" else type
+    forge = type == "forged_signature"
+    inject = None if type in ("none", "forged_signature") else type
     for _ in range(30):
         tx = sim.next_transaction(inject=inject, now=datetime.now())
         if inject or tx["sim_label"] == "none":
             break
     batch = sim.batches[tx["batch_id"]].as_dict()
     tx.pop("total_value")
-    label = tx.pop("sim_label")
-    return {"transaction": {**tx, "batch": batch}, "label": FRAUD_LABELS.get(label)}
+    label = "forged_signature" if forge else tx.pop("sim_label")
+    tx.pop("sim_label", None)
+    return {
+        "transaction": {**tx, "batch": batch, "forge_signature": forge},
+        "label": FRAUD_LABELS.get(label),
+    }
 
 
 @router.get("/meta")

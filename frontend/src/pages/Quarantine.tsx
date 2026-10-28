@@ -1,6 +1,7 @@
-import { CheckCircle2, ShieldCheck, ShieldX } from "lucide-react";
+import { CheckCircle2, Download, ShieldCheck, ShieldX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { exportUrl } from "../api/client";
 import { useDecision, useQuarantine } from "../api/hooks";
 import { TxDetail } from "../components/TxDrawer";
 import {
@@ -41,7 +42,7 @@ export default function Quarantine() {
       tone: action === "reject" ? "danger" : "ok",
       title: `${current.id} ${res.status.toLowerCase()}`,
       body: res.sealed_blocks.length
-        ? `Verdict sealed into block #${res.sealed_blocks.at(-1)}`
+        ? `Sealed into block #${res.sealed_blocks.at(-1)} · saved as a training label for the next retrain`
         : "Verdict queued",
       href: res.sealed_blocks.length ? `/ledger?block=${res.sealed_blocks.at(-1)}` : undefined,
     });
@@ -53,7 +54,12 @@ export default function Quarantine() {
       <PageTitle
         title="Quarantine"
         sup={open.length}
-        sub="High-risk transactions are held off-chain until an auditor decides. Either verdict is then written permanently to the ledger."
+        sub="High-risk transactions are held off-chain until an auditor decides. Either verdict is then written permanently to the ledger — and becomes a training label for the learning loop."
+        right={
+          <a href={exportUrl("audit.csv")} className="btn-ghost flex items-center gap-1.5 px-4 py-2 text-sm">
+            <Download size={15} /> Export audit trail (CSV)
+          </a>
+        }
       />
       {isLoading ? (
         <Loading />

@@ -89,6 +89,17 @@ def evaluate_rules(tx: dict, feats: dict[str, float]) -> list[dict]:
             }
         )
 
+    # Set by the pipeline after checking the seller's Ed25519 signature (absent in training data).
+    if tx.get("signature_valid") is False:
+        hits.append(
+            {
+                "id": "SIGNATURE_INVALID",
+                "severity": 1.0,
+                "reason": f"The signature does not match seller {tx['seller_id']}'s registered public key — "
+                "someone else signed this invoice in the seller's name.",
+            }
+        )
+
     return hits
 
 

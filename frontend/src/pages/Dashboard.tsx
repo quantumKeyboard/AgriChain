@@ -1,4 +1,4 @@
-import { ArrowUpRight, Boxes, CheckCircle2, Link2, ShieldCheck, ShieldX } from "lucide-react";
+import { ArrowUpRight, Boxes, CheckCircle2, Download, Link2, ShieldCheck, ShieldX } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -16,6 +16,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { exportUrl } from "../api/client";
 import {
   useBlocks,
   useFraudByType,
@@ -54,9 +55,17 @@ export default function Dashboard() {
         sup={running ? "live" : undefined}
         sub="Every agricultural supply-chain transaction is scored by the hybrid ML engine before it can be written to the ledger."
         right={
-          <Link to="/check" className="btn-gold flex items-center gap-1.5 px-4 py-2.5 text-sm">
-            + Check a transaction
-          </Link>
+          <div className="flex items-center gap-2">
+            <a
+              href={exportUrl("transactions.csv")}
+              className="btn-ghost flex items-center gap-1.5 px-4 py-2.5 text-sm"
+            >
+              <Download size={15} /> Export CSV
+            </a>
+            <Link to="/check" className="btn-gold flex items-center gap-1.5 px-4 py-2.5 text-sm">
+              + Check a transaction
+            </Link>
+          </div>
         }
       />
       <div className="grid gap-5 xl:grid-cols-12">

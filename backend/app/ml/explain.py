@@ -17,6 +17,11 @@ def _explainer() -> shap.TreeExplainer:
     return shap.TreeExplainer(load_bundle()["rf"])
 
 
+def reset_explainer() -> None:
+    """Drop the cached SHAP explainer after the model is retrained."""
+    _explainer.cache_clear()
+
+
 def explain(feats: dict[str, float], top: int = 6) -> list[dict]:
     rf = load_bundle()["rf"]
     none_idx = list(rf.classes_).index("none")
