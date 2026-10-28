@@ -91,6 +91,8 @@ If your scikit-learn differs and the model can't load, setup (option **2** in `r
 
 ## The 5-minute demo
 
+> Full presenter guide — setup checklist, what to click and say on every page, viva answers and troubleshooting: **[GUIDE.md](GUIDE.md)**.
+
 1. **Dashboard**: flip the **Simulator** toggle in the top bar. Transactions stream in, blocks get mined, and the charts update live.
 2. Click **Inject fraud → Phantom quantity** (or any of the 6 types). A red toast appears and the bell counter goes up. Try **Forged signature** too: an invoice in a seller's name signed with someone else's key is hard-quarantined by cryptography, whatever the ML score.
 3. **Quarantine**: the item shows a risk "sun" gauge, the rule that fired (*"Quantity is 2.2× what the seller actually received"*), SHAP bars and the fraud-type probabilities. Add a note and **Reject**. The verdict is mined into a block.
