@@ -92,12 +92,14 @@ If your scikit-learn differs and the model can't load, setup (option **2** in `r
 ## The 5-minute demo
 
 1. **Dashboard**: flip the **Simulator** toggle in the top bar. Transactions stream in, blocks get mined, and the charts update live.
-2. Click **Inject fraud → Phantom quantity** (or any of the 6 types). A red toast appears and the bell counter goes up.
+2. Click **Inject fraud → Phantom quantity** (or any of the 6 types). A red toast appears and the bell counter goes up. Try **Forged signature** too: an invoice in a seller's name signed with someone else's key is hard-quarantined by cryptography, whatever the ML score.
 3. **Quarantine**: the item shows a risk "sun" gauge, the rule that fired (*"Quantity is 2.2× what the seller actually received"*), SHAP bars and the fraud-type probabilities. Add a note and **Reject**. The verdict is mined into a block.
-4. **Ledger**: **Verify chain** shows green. Then **Flip a REJECTED fraud verdict** (an insider attack). Verify turns red, names the exact block and transaction, and the in-browser Merkle tree turns red. **Reset demo data** restores everything.
+4. **Ledger**: **Verify chain** shows green. Then **Flip a REJECTED fraud verdict** (an insider attack). Verify turns red, names the exact block and transaction, and the in-browser Merkle tree turns red.
+   Then the strongest one: **Rewrite history and re-mine** — the attacker edits a record *and* recomputes every hash and redoes the proof-of-work, so all hashes and links look valid. Verify still fails: the **seller's signature** no longer matches. Click **Prove** on any record to see its Merkle inclusion proof. **Reset demo data** restores everything.
 5. **Trace**: pick a batch with a *Circular trading* flag. The journey shows goods returning to an earlier holder (↺).
 6. **Network**: the red backward arc is the trading ring; `networkx` lists the detected cycles. Participant trust scores sit alongside.
-7. **Model**: the ablation (rules vs RF vs hybrid), the threshold slider, ROC/PR curves, the confusion matrix and per-type recall on a shifted test set.
+7. **Model**: the **learning loop** — press **Retrain with auditor feedback** and the auditors' verdicts become training labels; see before/after metrics and the version trend (live scoring switches to the new model). Then the ablation (rules vs RF vs hybrid), the threshold slider, ROC/PR curves, the confusion matrix and per-type recall on a shifted test set.
+8. **Exports**: CSV of all transactions (Dashboard), the audit trail (Quarantine) and the block headers (Ledger) open directly in Excel.
 
 **Check** lets you load a realistic example of any fraud type, edit any field (price, temperature, organic certificate…),
 re-score it instantly, and submit it to the pipeline.
@@ -128,6 +130,16 @@ fraud subtler. The Model page states this caveat.
 
 ## Viva FAQ
 
+**What do the digital signatures add?** Hashes prove data didn't change *after sealing*, but whoever controls the
+database could rewrite a record and recompute every hash and re-mine every block. Each invoice is signed by its seller
+with Ed25519, and only the seller holds that key. Rewritten records therefore fail signature verification (the Ledger's
+"Rewrite history" attack shows this), and an invoice in someone else's name is rejected on arrival. In this demo the
+server derives everyone's keys from a seed so the simulator can sign for them; in production each party holds its own.
+
+**How does the model improve over time?** The learning loop: approved quarantines are labelled as false alarms,
+rejected ones as the suspected fraud type, and retraining adds them to the training data (never the test sets), so
+before/after metrics are a fair comparison.
+
 **Is this a real blockchain?** It implements the parts of a blockchain that make it tamper-evident: SHA-256 hashing of
 each transaction record, a Merkle root per block, previous-hash links, proof-of-work, and full re-verification. It is
 **single-node**: there is no peer-to-peer network or multi-party consensus. That was a deliberate scope decision for a
@@ -148,7 +160,7 @@ contributions toward "fraud", computed per transaction in about 50 ms.
 ## Tests
 
 ```bash
-cd backend && pytest -q && ruff check .        # 21 tests: ledger tamper cases, every rule, feature parity, API flows
+cd backend && pytest -q && ruff check .        # 32 tests: ledger + signature tamper cases, every rule, feature parity, learning loop, API flows
 cd frontend && npm test && npm run typecheck && npm run lint && npm run build
 ```
 

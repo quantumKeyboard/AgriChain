@@ -40,8 +40,8 @@ Env (`backend/.env`, copy from `.env.example`): `DEMO_MODE`, `DB_URL`, `POW_DIFF
 ```
 backend/app/        main.py, config.py, db.py, models.py, schemas.py
 backend/app/routers/  transactions, quarantine, chain, batches, stats, sim, model, dev
-backend/app/chain/    ledger.py (hash, Merkle, PoW, seal, verify)
-backend/app/ml/       features.py, rules.py, scorer.py, explain.py
+backend/app/chain/    ledger.py (hash, Merkle, PoW, seal, verify), identity.py (Ed25519 keys, signatures)
+backend/app/ml/       features.py, rules.py, scorer.py, explain.py, training.py (shared by script + retrain API), feedback.py
 backend/app/sim/      generator.py (shared by dataset script and live simulator)
 backend/scripts/      generate_dataset.py, train_model.py, seed_demo.py
 backend/artifacts/    model.joblib, metrics.json (committed)
@@ -51,7 +51,7 @@ docs/ui-references/   UI references from the team — look here before building 
 ```
 
 ## How to work
-1. Build milestones in order from `DESIGN.md` §7. Current milestone: **M8 — Learning loop** (M1–M7 done; see `DESIGN.md` §7 Build status). (Milestones: M1 Data & Model → M2 Scoring API + Ledger core → M3 Frontend shell, Check page, Dashboard (basic) → M4 Quarantine & Ledger Explorer → M5 Live simulator, charts, Batch Trace → M6 Model Insights, polish, report-ready → M7/M8 optional V1.)
+1. Build milestones in order from `DESIGN.md` §7. Current milestone: **none — M1–M8 complete (final build)**; see `DESIGN.md` §7 Build status. New work = items from the Later list, only when the human asks. (Milestones: M1 Data & Model → M2 Scoring API + Ledger core → M3 Frontend shell, Check page, Dashboard (basic) → M4 Quarantine & Ledger Explorer → M5 Live simulator, charts, Batch Trace → M6 Model Insights, polish, report-ready → M7/M8 optional V1.)
 2. Work in small vertical steps; after each step run the tests and the app.
 3. A milestone is done only when its "Done when" criteria pass and tests, lint and typecheck are green.
 4. Update the "Current milestone" line above and tick items in `DESIGN.md` when a milestone completes.
@@ -62,8 +62,10 @@ docs/ui-references/   UI references from the team — look here before building 
 - **One feature function.** `compute_features(tx, seller, buyer, history)` in `ml/features.py` is the only place features are computed — used by training, the generator and the API. Never duplicate feature logic.
 - Every rule in `ml/rules.py` returns `{id, severity 0–1, reason}` with a human-readable reason; the UI shows these verbatim.
 - Risk = `0.60·p_fraud + 0.25·rule_score + 0.15·anomaly_score`; thresholds come from config, never hard-coded.
-- Ledger hashing uses canonical JSON (sorted keys, no whitespace) of immutable fields plus final ledger status. Any change to hashing needs a test update and a `/chain/verify` re-check.
+- Ledger hashing uses canonical JSON (sorted keys, no whitespace) of immutable fields + the seller's Ed25519 signature + final ledger status. Signed/hashed fields are defined once in `app/chain/identity.py` (`SIGNED_FIELDS`). Any change to hashing needs a test update and a `/chain/verify` re-check.
 - Seeds: all generators/training take `--seed`; default 42. Results must be reproducible.
+- Schema changes: bump `SCHEMA_VERSION` in `app/db.py` (old local DBs are then re-seeded automatically).
+- Never let tests write the committed model: they run with `ARTIFACTS_DIR` pointing at a temp copy (see `tests/conftest.py`).
 - Python: type hints on public functions, Pydantic schemas for every request/response. TS: strict mode, no `any`, API types in `src/api/types.ts`.
 - Colours: green/amber/red are reserved for clear/flagged/quarantined. Every risk badge has an icon + label (not colour alone). Every chart has a title, units and an empty state.
 - Secrets/config via env only; never commit `.env`; keep `.env.example` current. `/api/dev/*` routes exist only when `DEMO_MODE=true`.
@@ -77,7 +79,7 @@ Deliberately cut (reasons in `DESIGN.md` §3). Do not add, even partially, witho
 - Deep learning, LSTM, graph neural networks, federated learning
 - LLM chatbot or LLM-written explanations (explanations = rules + SHAP, deterministic)
 - Real IoT hardware, payments/escrow/tokens, mobile app, WebSockets/SSE
-Not yet — V1/Later items (trust score, network graph, signatures, retrain loop, Ethereum anchoring, Merkle proof visual, HF/NLP add-on, map, i18n) wait until M6 is complete **and** the human asks.
+Built since: trust score, network graph, signatures, retrain loop, Merkle proof visual. Still Later (only when the human asks): Ethereum anchoring, multi-validator approval, real-dataset benchmark, HF/NLP add-on, map, i18n.
 Also avoid: extra services, new dependencies without a one-line reason, premature caching.
 
 ## Ask before

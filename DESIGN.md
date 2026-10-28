@@ -214,10 +214,14 @@ agrichain-sentinel/
 
 ## 7. Build plan
 
-### Build status (2026-10-27)
-- **M1–M6: done.** All "Done when" criteria met; backend 21 pytest tests, frontend 9 Vitest tests, ruff/Prettier/tsc clean, production build OK, the §4 demo script was run end to end in a headless browser.
-- **M7: done** (pulled forward): participant trust scores + radar, trade-network flow graph with `networkx` cycle detection, threshold slider, Merkle tree visual (from Later).
-- **M8: not started**: signed transactions, auditor-feedback retrain, CSV export.
+### Build status (2026-10-28) — final build, all milestones complete
+- **M1–M6: done.** All "Done when" criteria met; the §4 demo script runs end to end in a headless browser with zero console errors.
+- **M7: done**: participant trust scores + radar, trade-network flow graph with `networkx` cycle detection, threshold slider, Merkle tree visual.
+- **M8: done**: Ed25519 signed transactions (forged-signature hard gate at ingest; signatures re-checked by chain verification, which catches a fully re-mined history rewrite), auditor-feedback retrain with before/after metrics and version history, CSV exports (transactions, audit trail, chain).
+- **From Later, done**: click-to-prove Merkle inclusion proofs on the Ledger page.
+- **Approved deviations** (the human asked for the complete build without check-ins): the ledger record hash now covers the seller signature; the schema gained `participant.public_key`, `transaction.signature` and an `appmeta` table (old local DBs are re-seeded automatically); new dependency `cryptography`.
+- **Still in Later** (not built): Ethereum anchoring, multi-validator approval, real-dataset benchmark, HF/NLP add-on, map, i18n.
+- Tests: backend 32 (pytest), frontend 11 (Vitest); ruff, Prettier and `tsc` clean; production build OK.
 - Measured: scoring incl. SHAP ≈ 50–75 ms per transaction; seeding 300 tx + 60 blocks ≈ 5 s.
 Milestones are vertical slices; each ends runnable and demoable. Rough effort for 2–3 people: M1 4 d · M2 3 d · M3 3 d · M4 3 d · M5 3 d · M6 3 d.
 

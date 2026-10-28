@@ -16,8 +16,10 @@ blockchain-style ledger. A hybrid engine (Random Forest + Isolation Forest + 7 b
 score and an explanation. Low-risk transactions are sealed into blocks. Medium-risk ones are sealed *with a flag*.
 High-risk ones are **quarantined** until a human auditor approves or rejects them, and that verdict is then sealed on the
 chain too. A verifier recomputes every hash, so any later edit to a transaction, a verdict or a block is detected and
-located. A React dashboard visualises all of it, and a built-in simulator streams realistic traffic and can inject six
-kinds of agricultural fraud on demand.
+located. Every transaction is **signed by its seller (Ed25519)**, so forged invoices are caught on arrival and even a
+fully re-mined, rewritten history is exposed. Auditor verdicts feed a **learning loop** that retrains the model in place.
+A React dashboard visualises all of it, and a built-in simulator streams realistic traffic and can inject six kinds of
+agricultural fraud plus identity spoofing on demand.
 
 ---
 
@@ -38,6 +40,7 @@ kinds of agricultural fraud on demand.
 | joblib | 1.6 | Saving/loading the model bundle (`model.joblib`) |
 | networkx | 3.7 | Cycle detection in the trade graph (circular trading) |
 | python-dotenv | 1.2 | Loading `backend/.env` |
+| cryptography | 50.0 | Ed25519 key pairs and transaction signatures (`app/chain/identity.py`) |
 | hashlib (stdlib) | — | SHA-256 for transaction hashes, Merkle tree, proof-of-work |
 | pytest / httpx / ruff | 9.1 / — / 0.17 | Tests, FastAPI TestClient, lint + format |
 
@@ -108,18 +111,21 @@ user accounts, no deep learning, no LLM calls, no pretrained Hugging Face model.
 
 | Concept | Implementation |
 |---|---|
-| Transaction hash | `SHA-256(canonical JSON)` of the 21 immutable transaction fields **plus its final ledger status** (`COMMITTED` / `FLAGGED` / `APPROVED` / `REJECTED`). Canonical = sorted keys, no whitespace, datetimes to seconds, floats rounded to 4 dp. Including the status means flipping a verdict breaks the hash. |
+| Seller signature | Each participant has an **Ed25519** key pair; the public key is stored on `participant.public_key`. The seller signs the canonical JSON of the 21 immutable fields; the hex signature is stored on `transaction.signature`. *Demo custody:* private keys are derived on the server from `KEY_SEED` + participant id so the simulator can sign for everyone; in production each party would hold its own key. |
+| Transaction hash | `SHA-256(canonical JSON)` of the 21 immutable transaction fields **+ the seller's signature + its final ledger status** (`COMMITTED` / `FLAGGED` / `APPROVED` / `REJECTED`). Canonical = sorted keys, no whitespace, datetimes to seconds, floats rounded to 4 dp. Including the status means flipping a verdict breaks the hash. |
 | Merkle root | Pairwise `SHA-256(left + right)` up the tree; an odd last node is duplicated. Empty block → `SHA-256("")`. `merkle_proof()` returns the sibling path for any leaf. |
 | Block header hash | `SHA-256("index|timestamp|prev_hash|merkle_root|nonce|difficulty")` |
 | Consensus | Proof-of-work: increment `nonce` until the hash starts with `POW_DIFFICULTY` hex zeros (default 3, about 4,096 tries on average, milliseconds). |
 | Genesis | Block 0, `prev_hash = 64 × "0"`, no transactions. |
 | Block size | `BLOCK_SIZE = 5` records. Auditor verdicts and `POST /api/chain/seal` force-seal a partial block so the result is visible immediately. |
 | Mempool | `LedgerEntry` rows with `block_index = NULL`. |
-| Verification | For every block, in order: recompute each tx hash from today's DB rows → Merkle root → header hash → PoW target → previous-hash link. Returns `valid`, `first_broken_index`, a reason, and the tampered tx IDs. |
-| Tamper demo (`DEMO_MODE` only) | `POST /api/dev/tamper` with mode `quantity` (×10 a sealed quantity), `verdict` (flip a sealed REJECTED to COMMITTED) or `header` (edit a nonce). `POST /api/dev/reset` re-seeds. |
+| Verification | For every block, in order: recompute each tx hash from today's DB rows → Merkle root → header hash → PoW target → previous-hash link → **every seller signature** against the registered public key. Returns `valid`, `first_broken_index`, a reason, and the tampered tx IDs. Rejected forgeries are sealed as evidence; their (invalid) signature is expected and accepted only for records sealed as `REJECTED` with type `forged_signature`. |
+| Forgery gate | At ingest, an invoice whose signature doesn't verify against the seller's key gets rule `SIGNATURE_INVALID` (severity 1.0) and is **hard-quarantined** (risk ≥ 0.99, type "Forged signature"), regardless of the ML score. |
+| Tamper demo (`DEMO_MODE` only) | `POST /api/dev/tamper` with mode `quantity` (×10 a sealed quantity), `verdict` (flip a sealed REJECTED to COMMITTED), `header` (edit a nonce) or **`rewrite`** (edit a quantity, then recompute every record hash and Merkle root and re-mine that block and all later ones — every hash and link is valid again, and only the signature check catches it). `POST /api/dev/reset` re-seeds. |
+| Merkle proofs | `GET /chain/blocks/{i}` returns each record's sibling path; the Ledger page rebuilds the tree in the browser (Web Crypto) and highlights the inclusion proof for any record. |
 
-Scope note: this is a **single-node** chain. It is tamper-evident (hashing, Merkle trees, PoW, verification), but there
-is no peer-to-peer network or multi-party consensus.
+Scope note: this is a **single-node** chain. It is tamper-evident (hashing, Merkle trees, PoW, signatures, verification),
+but there is no peer-to-peer network or multi-party consensus.
 
 ---
 
@@ -191,7 +197,18 @@ cold-chain 95 % / 96 % · circular 92 % / 97 % · duplicate 94 % / 94 %.
 
 > The data is synthetic, so these scores are optimistic. The Model page and README say this explicitly.
 
-### 5.6 Explainability
+### 5.6 Learning loop (`app/ml/feedback.py`, `app/ml/training.py`, `POST /api/model/retrain`)
+
+| Step | What happens |
+|---|---|
+| Label | Every auditor verdict becomes a label: **Approved → `none`** (a false alarm), **Rejected → the fraud type the model suspected**. Forged-signature rejections are skipped (cryptography catches those, not the model). |
+| Train | Labels are added to the **training split only**, weight ×5, using the stored 21-feature vector from `assessment.features`. Test and shifted sets are unchanged, so before/after metrics are comparable. |
+| Swap | The new `model.joblib` / `metrics.json` are written, the model and SHAP caches are cleared, and live scoring uses the new version immediately. Past assessments keep the `model_version` that made them. |
+| Track | Every version is appended to `artifacts/history.json` (PR-AUC, F1, shifted F1, labels used) and charted on the Model page. |
+
+Retraining takes ~6–10 s. With ~20 labels next to 15,000 synthetic rows the metrics move only slightly — the UI says so.
+
+### 5.7 Explainability
 
 - **Rules:** each hit carries a human sentence, e.g. *"Quantity 30,758 kg is 2.2× the quantity the seller actually received for this batch."*
 - **SHAP:** `TreeExplainer` on the Random Forest. Contribution toward fraud = −(SHAP value of the `none` class). The top 6 features are shown as diverging bars.
@@ -200,20 +217,22 @@ cold-chain 95 % / 96 % · circular 92 % / 97 % · duplicate 94 % / 94 %.
 
 ---
 
-## 6. Database (SQLite, `backend/app/models.py`)
+## 6. Database (SQLite, `backend/app/models.py`, 8 tables)
 
 | Table | Key columns |
 |---|---|
-| `participant` | id (`F-001`…), name, role, region, registered_on, land_acres, capacity_tons |
+| `participant` | id (`F-001`…), name, role, region, registered_on, land_acres, capacity_tons, public_key (Ed25519, hex) |
 | `batch` | id (`B-XXXXXXXX`), crop, origin_farmer_id, harvest_date, organic_claimed, organic_cert_valid, region |
-| `transaction` | id (`TX-XXXXXXXX`), batch_id, crop, stage, seller_id, buyer_id, timestamp, quantity_kg, unit_price, total_value, ref_price, quality_grade, moisture_pct, organic flags, transit_km/hours, temp_avg/max_c, cold_chain_ok_claimed, payment_mode, sim_label (ground truth, never used for scoring) |
+| `transaction` | id (`TX-XXXXXXXX`), batch_id, crop, stage, seller_id, buyer_id, timestamp, quantity_kg, unit_price, total_value, ref_price, quality_grade, moisture_pct, organic flags, transit_km/hours, temp_avg/max_c, cold_chain_ok_claimed, payment_mode, signature (seller's Ed25519, hex), sim_label (ground truth, never used for scoring) |
 | `assessment` | tx_id, risk, p_fraud, rule_score, anomaly_score, pred_type, decision, rule_hits (JSON), type_probs (JSON), shap_top (JSON), features (JSON), model_version |
 | `review` | tx_id, action (APPROVED/REJECTED), note, reviewed_at |
 | `block` | index, timestamp, prev_hash, merkle_root, nonce, difficulty, hash, tx_count |
 | `ledgerentry` | tx_id, status, block_index (NULL = mempool), position, tx_hash, queued_at |
+| `appmeta` | key/value — `schema_version` ("2"). An older local DB is detected at startup and re-seeded instead of crashing. |
 
 On first start with an empty DB, the API seeds 300 transactions over the last ~45 hours (8 % fraud) and ~60 mined
-blocks. All but 4 quarantined items are already reviewed, so the queue has something to show.
+blocks, including 2 identity-spoofing attempts. All but 4 quarantined items are already reviewed, so the queue has
+something to show and the learning loop has labels to use.
 
 ---
 
@@ -222,7 +241,7 @@ blocks. All but 4 quarantined items are already reviewed, so the queue has somet
 | Method & path | Purpose |
 |---|---|
 | `GET /health` | Status, model version, thresholds, demo mode |
-| `POST /transactions/score` | Dry run: score without saving |
+| `POST /transactions/score` | Dry run: score without saving (`forge_signature: true` signs as someone else) |
 | `POST /transactions` | Score + route (mempool or quarantine) + seal if the block is full |
 | `GET /transactions` | List; filters `decision`, `pred_type`, `batch_id`, `ledger_status`, `limit` |
 | `GET /transactions/{id}` | Full detail incl. SHAP, rules, ledger status, block |
@@ -236,7 +255,11 @@ blocks. All but 4 quarantined items are already reviewed, so the queue has somet
 | `GET /participants`, `GET /participants/{id}` | Trust scores and radar dimensions |
 | `GET /network` | Trade graph nodes/edges + `networkx` cycles (length ≤ 5) |
 | `GET /model/report` | `metrics.json` |
-| `POST /sim/step` | `{n, inject?}`: generate and process live transactions |
+| `GET /model/feedback` | Auditor verdicts available as training labels |
+| `POST /model/retrain` | Learning loop: retrain with feedback, hot-swap the model, return before/after metrics |
+| `GET /model/history` | All model versions with their metrics |
+| `GET /export/transactions.csv`, `/export/audit.csv`, `/export/chain.csv` | CSV downloads (UTF-8 with BOM for Excel) |
+| `POST /sim/step` | `{n, inject?}`: generate and process live transactions; `inject` = any of the 6 fraud types or `forged_signature` |
 | `GET /sim/example?type=` | A realistic example for the Check form (generated on a copy; live state untouched) |
 | `GET /sim/meta` | Crops, stages, regions, fraud types, participants |
 | `POST /dev/tamper`, `POST /dev/reset` | Demo only (`DEMO_MODE=true`) |
@@ -247,16 +270,16 @@ blocks. All but 4 quarantined items are already reviewed, so the queue has somet
 
 | Route | Page | What it shows |
 |---|---|---|
-| `/` | Dashboard | Value screened (₹ Cr), decision mix, 4 KPI tiles (incl. caught/injected ground truth), transactions-over-time stacked area (2 h / 48 h), live risk stream with threshold lines, fraud-by-type bars, region × crop risk heatmap, ledger mini-chain + Verify, transaction history, stage breakdown |
-| `/check` | Check a transaction | Example loaders for legit + 6 fraud types, editable form, risk "sun" gauge, rule reasons, SHAP bars, score breakdown, Submit to pipeline |
-| `/quarantine` | Quarantine | Open queue sorted by risk, full explanation, type probabilities, Approve/Reject with note, reviewed history with block links |
-| `/ledger` | Ledger | Scrollable block chain (per-record status bars), Verify banner, attack simulation (3 tamper modes + reset), block detail with stored vs recomputed hashes and an in-browser Merkle tree |
+| `/` | Dashboard | Value screened (₹ Cr), decision mix, 4 KPI tiles (incl. caught/injected ground truth), transactions-over-time stacked area (2 h / 48 h), live risk stream with threshold lines, fraud-by-type bars, region × crop risk heatmap, ledger mini-chain + Verify, transaction history, stage breakdown, **Export CSV** |
+| `/check` | Check a transaction | Example loaders for legit + 6 fraud types + forged signature, editable form (incl. "Forge signature"), risk "sun" gauge, rule reasons, SHAP bars, score breakdown, Submit to pipeline |
+| `/quarantine` | Quarantine | Open queue sorted by risk, full explanation incl. signature status, type probabilities, Approve/Reject with note (saved as a training label), reviewed history with block links, **Export audit trail (CSV)** |
+| `/ledger` | Ledger | Scrollable block chain (per-record status bars), Verify banner, attack simulation (**4** tamper modes incl. "rewrite history and re-mine" + reset), block detail with stored vs recomputed hashes, per-record signature check, in-browser Merkle tree with **click-to-prove inclusion proofs**, CSV export |
 | `/trace` | Batch trace | Batch list (flagged / all), journey graphic Farmer→Retailer with ↺ for loops, timeline of hops with reasons, quantity-per-hop bars |
 | `/network` | Trade network | Layered flow graph (5 role columns; backward red arcs = circular trades), trust colouring, detected cycles, participant trust radar + list |
-| `/model` | Model insights | Headline metrics (held-out vs shifted), ablation, threshold explorer (precision/recall + score histograms), ROC/PR, per-type recall, confusion matrix, feature importance, dataset + caveat |
+| `/model` | Model insights | Headline metrics (held-out vs shifted), **learning loop** (labels available, Retrain, before/after table, version trend), ablation, threshold explorer (precision/recall + score histograms), ROC/PR, per-type recall, confusion matrix, feature importance, dataset + caveat |
 
 Shared pieces: `Layout` (pill navigation, simulator toggle, speed, Inject fraud menu, quarantine bell, toasts),
-`TxDrawer` (slide-over detail), `RiskSun` (sunburst gauge), `Explain` (rules, SHAP, breakdown), `charts`
+`TxDrawer` (slide-over detail incl. signature status), `LearningLoop`, `RiskSun` (sunburst gauge), `Explain` (rules, SHAP, breakdown), `charts`
 (tooltip, legend, heatmap), `state/AppState` (simulator loop + toasts).
 
 **Visual design:** matches `docs/ui-references/reference-dark-gold.png`, with near-black surfaces, 28 px rounded cards,
@@ -292,23 +315,25 @@ agrichain/
 │   │   ├── schemas.py       Request bodies
 │   │   ├── services.py      assess → ingest → review pipeline
 │   │   ├── views.py         Response shaping
-│   │   ├── chain/ledger.py  Hashing, Merkle, PoW, seal, verify
-│   │   ├── ml/              features.py, rules.py, scorer.py, explain.py, dataset.py
+│   │   ├── chain/ledger.py  Hashing, Merkle, PoW, seal, verify, re-mine (demo attack)
+│   │   ├── chain/identity.py Ed25519 keys, signing, verification
+│   │   ├── ml/              features.py, rules.py, scorer.py, explain.py, dataset.py,
+│   │   │                    training.py (shared training pipeline), feedback.py (verdicts → labels)
 │   │   ├── sim/             generator.py (simulator), state.py (live sim + demo seeding)
-│   │   └── routers/         transactions, quarantine, chain, batches, stats, sim, model, network, dev
+│   │   └── routers/         transactions, quarantine, chain, batches, stats, sim, model, network, export, dev
 │   ├── scripts/             generate_dataset.py, train_model.py, seed_demo.py
-│   ├── artifacts/           model.joblib (2.8 MB), metrics.json   ← committed
-│   └── tests/               test_ledger.py, test_ml.py, test_api.py (21 tests)
+│   ├── artifacts/           model.joblib (2.8 MB), metrics.json ← committed; history.json after a retrain
+│   └── tests/               test_ledger.py, test_ml.py, test_api.py, test_identity_and_loop.py (32 tests)
 └── frontend/
     ├── package.json, vite.config.ts, tsconfig.json, index.html
     └── src/
         ├── main.tsx, App.tsx, index.css (theme tokens)
         ├── api/             client.ts, hooks.ts, types.ts
-        ├── components/      Layout, TxDrawer, RiskSun, Explain, charts, ui
+        ├── components/      Layout, TxDrawer, RiskSun, Explain, LearningLoop, charts, ui
         ├── pages/           Dashboard, Check, Quarantine, Ledger, Trace, Network, Model
         ├── state/           AppState.tsx (simulator + toasts)
         ├── lib/             format.ts, tokens.ts
-        └── test/            components.test.tsx (9 tests)
+        └── test/            components.test.tsx (11 tests)
 ```
 
 ---
@@ -324,6 +349,8 @@ agrichain/
 | `FLAG_THRESHOLD` | `0.40` | Risk at which a transaction is flagged |
 | `QUARANTINE_THRESHOLD` | `0.70` | Risk at which a transaction is held for review |
 | `CORS_ORIGINS` | `http://localhost:5173,…` | Allowed browser origins |
+| `KEY_SEED` | `agrichain-demo` | Seed for the deterministic demo signing keys (change it and re-seed for different keys) |
+| `ARTIFACTS_DIR` | `backend/artifacts` | Where the model, metrics and version history live (tests point it at a temp copy) |
 
 ---
 
@@ -331,11 +358,11 @@ agrichain/
 
 | Area | What exists |
 |---|---|
-| Backend tests (21) | Merkle root/proof, PoW, tamper detection for data / verdict / header, every rule, honest-disclosure negative case, simulator determinism, injected-fraud detection, **feature parity DB vs in-memory**, API flows (dry run doesn't persist, 422 validation, quarantine → reject → sealed → 409 on re-review, blocks fill, every dashboard endpoint, batch trail, tamper → reset) |
-| Frontend tests (9) | Risk gauge labels and thresholds, status badge text, rule ordering, SHAP signs, ₹/kg/hash formatters, decision mapping |
+| Backend tests (32) | Merkle root/proof, PoW, tamper detection for data / verdict / header, **Ed25519 sign/verify, forged-signature hard gate, sealed rejected forgery stays valid, re-mined rewrite caught only by signatures**, CSV exports, **retrain hot-swaps the model and records history**, outdated-schema detection, every rule, honest-disclosure negative case, simulator determinism, injected-fraud detection, **feature parity DB vs in-memory**, API flows (dry run doesn't persist, 422 validation, quarantine → reject → sealed → 409 on re-review, blocks fill, every dashboard endpoint, batch trail, tamper → reset) |
+| Frontend tests (11) | Risk gauge labels and thresholds, status badge text, rule ordering, SHAP signs, signature status, ₹/kg/hash formatters, decision mapping |
 | Static checks | ruff (lint + format), TypeScript strict, Prettier |
-| End-to-end | The README demo script run in a headless browser: Check → simulator + injection → Quarantine reject → Ledger verify → tamper → verify fails → reset → verify passes |
-| Performance | ~50–75 ms per scored transaction incl. SHAP; seeding 300 tx + 60 blocks ≈ 5 s; full chain verify ≪ 1 s |
+| End-to-end | The README demo script run in a headless browser: simulator + injection (incl. forged signature) → Quarantine reject → Ledger verify → rewrite-and-re-mine attack → verify fails on the signature → Merkle proof → reset → verify passes → Retrain → Check forged example. Zero console errors. |
+| Performance | ~50–75 ms per scored transaction incl. SHAP + signature check; seeding 300 tx + 60 blocks ≈ 3–5 s; full chain verify incl. ~300 signature checks ≪ 1 s; retrain ≈ 6–10 s |
 
 ---
 
@@ -350,3 +377,7 @@ agrichain/
 | Reference price | Simulated daily mandi price for a crop at a stage |
 | Shifted test set | Second test set where fraud is subtler and distributions wider — measures robustness |
 | Ground truth | `sim_label` — what the simulator actually injected (shown as "caught X / Y injected") |
+| Seller signature | Ed25519 signature by the seller over the transaction's canonical fields; proves who issued the invoice and that it wasn't changed |
+| Rewrite attack | Editing a sealed record and then recomputing every hash and re-mining the chain so hashes look valid — caught only by signatures |
+| Inclusion proof | The few sibling hashes needed to show one record is in a block's Merkle root, without the other records |
+| Learning loop | Auditor verdicts → training labels → retrain → hot-swapped model, tracked as model versions |
