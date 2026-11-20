@@ -11,8 +11,16 @@
 # =============================================================================
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-BACKEND="$ROOT/backend"
-FRONTEND="$ROOT/frontend"
+if [ -d "$ROOT/apps/backend" ]; then
+    BACKEND="$ROOT/apps/backend"
+else
+    BACKEND="$ROOT/backend"
+fi
+if [ -d "$ROOT/apps/frontend" ]; then
+    FRONTEND="$ROOT/apps/frontend"
+else
+    FRONTEND="$ROOT/frontend"
+fi
 VENV_PY="$BACKEND/.venv/bin/python"
 RUN_DIR="$ROOT/.run"
 API_URL="http://localhost:8000"

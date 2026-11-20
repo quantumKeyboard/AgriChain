@@ -13,7 +13,27 @@ see exactly where history was altered.
 
 Requirements: **Python 3.11–3.13** and **Node.js 20+** (LTS).
 
-### Windows
+### Monorepo (Turborepo) — Quickest start
+
+```bash
+npm install
+npm run dev
+```
+
+Starts both the FastAPI backend (`http://localhost:8000`) and Vite frontend (`http://localhost:5173`) in parallel with a single command via **Turborepo**.
+
+On first run, it automatically detects Python, creates `.venv`, installs dependencies, and prepares the database and model.
+
+Other monorepo commands:
+```bash
+npm run build       # Build all packages with Turborepo
+npm run lint        # Lint backend (ruff) and frontend (prettier)
+npm run test        # Run all unit and integration tests (pytest + vitest)
+npm run typecheck   # Typecheck frontend TypeScript
+npm run format      # Format backend and frontend code
+```
+
+### Windows (Menu launcher)
 
 1. Install [Python 3.12](https://www.python.org/downloads/) (tick **"Add python.exe to PATH"**) and the [Node.js LTS](https://nodejs.org/).
 2. Unzip the project, e.g. to `C:\dev\agrichain`.

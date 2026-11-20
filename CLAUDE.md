@@ -14,7 +14,18 @@ Full design, scope and reasoning: see `DESIGN.md`. Technical overview: `Project-
 
 ## Commands
 ```bash
-# backend (from backend/)
+# monorepo with Turborepo (from repo root)
+npm run dev                  # starts backend API (:8000) + frontend UI (:5173) in one command
+npm run build                # builds with Turborepo
+npm test                     # runs both pytest and vitest
+npm run lint                 # checks ruff and prettier
+npm run typecheck            # checks TypeScript
+
+# launcher scripts (from repo root)
+./run.sh                     # macOS / Linux menu launcher (macOS Finder: double-click run.command)
+run.bat                      # Windows menu launcher (plain cmd)
+
+# apps/backend (from apps/backend/)
 python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 python scripts/generate_dataset.py --n 20000 --seed 42
 python scripts/train_model.py            # writes artifacts/model.joblib + metrics.json
@@ -23,31 +34,28 @@ uvicorn app.main:app --reload --port 8000   # Swagger UI at /docs
 pytest -q
 ruff check . && ruff format --check .
 
-# everything at once (from repo root)
-./run.sh                    # macOS / Linux menu launcher (macOS Finder: double-click run.command)
-run.bat                     # Windows menu launcher (plain cmd; venv if allowed, else pip --user)
-
-# frontend (from frontend/)
-npm install
+# apps/frontend (from apps/frontend/)
 npm run dev          # http://localhost:5173
 npm run test         # vitest run
 npm run lint && npm run typecheck
 npm run build
 ```
-Env (`backend/.env`, copy from `.env.example`): `DEMO_MODE`, `DB_URL`, `POW_DIFFICULTY=3`, `BLOCK_SIZE=5`, `FLAG_THRESHOLD=0.40`, `QUARANTINE_THRESHOLD=0.70`. Frontend: `VITE_API_URL=http://localhost:8000`.
+Env (`apps/backend/.env`, copy from `.env.example`): `DEMO_MODE`, `DB_URL`, `POW_DIFFICULTY=3`, `BLOCK_SIZE=5`, `FLAG_THRESHOLD=0.40`, `QUARANTINE_THRESHOLD=0.70`. Frontend: `VITE_API_URL=http://localhost:8000`.
 
 ## Repository layout
 ```
-backend/app/        main.py, config.py, db.py, models.py, schemas.py
-backend/app/routers/  transactions, quarantine, chain, batches, stats, sim, model, dev
-backend/app/chain/    ledger.py (hash, Merkle, PoW, seal, verify), identity.py (Ed25519 keys, signatures)
-backend/app/ml/       features.py, rules.py, scorer.py, explain.py, training.py (shared by script + retrain API), feedback.py
-backend/app/sim/      generator.py (shared by dataset script and live simulator)
-backend/scripts/      generate_dataset.py, train_model.py, seed_demo.py
-backend/artifacts/    model.joblib, metrics.json (committed)
-backend/tests/
-frontend/src/         api/, components/, pages/, hooks/, lib/
-docs/ui-references/   UI references from the team — look here before building any UI
+apps/backend/app/        main.py, config.py, db.py, models.py, schemas.py
+apps/backend/app/routers/  transactions, quarantine, chain, batches, stats, sim, model, dev
+apps/backend/app/chain/    ledger.py (hash, Merkle, PoW, seal, verify), identity.py (Ed25519 keys, signatures)
+apps/backend/app/ml/       features.py, rules.py, scorer.py, explain.py, training.py (shared by script + retrain API), feedback.py
+apps/backend/app/sim/      generator.py (shared by dataset script and live simulator)
+apps/backend/scripts/      dev.js, run.js, generate_dataset.py, train_model.py, seed_demo.py
+apps/backend/artifacts/    model.joblib, metrics.json (committed)
+apps/backend/tests/
+apps/frontend/src/         api/, components/, pages/, hooks/, lib/
+turbo.json                 Turborepo configuration
+package.json               Monorepo root package.json
+docs/ui-references/        UI references from the team — look here before building any UI
 ```
 
 ## How to work

@@ -12,8 +12,16 @@ title AgriChain Sentinel
 cd /d "%~dp0"
 
 set "ROOT=%~dp0"
-set "BACKEND=%ROOT%backend"
-set "FRONTEND=%ROOT%frontend"
+if exist "%ROOT%apps\backend" (
+    set "BACKEND=%ROOT%apps\backend"
+) else (
+    set "BACKEND=%ROOT%backend"
+)
+if exist "%ROOT%apps\frontend" (
+    set "FRONTEND=%ROOT%apps\frontend"
+) else (
+    set "FRONTEND=%ROOT%frontend"
+)
 set "VENV_PY=%BACKEND%\.venv\Scripts\python.exe"
 rem Long timeout + retries: slow or unstable connections otherwise abort big downloads.
 set "PIPFLAGS=--disable-pip-version-check --no-input --timeout 120 --retries 10"

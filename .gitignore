@@ -1,3 +1,24 @@
+# Node / Monorepo
+node_modules/
+.turbo/
+dist/
+*.tsbuildinfo
+test-results/
+playwright-report/
+blob-report/
+.env
+
+# Python / Backend
+.venv/
+apps/backend/.venv/
+apps/backend/.env
+apps/backend/data/
+apps/backend/artifacts/data/
+apps/backend/*.egg-info/
+apps/backend/*.db
+*.db
+*.sqlite
+*.sqlite3
 backend/.venv/
 backend/.env
 backend/data/
@@ -6,7 +27,12 @@ backend/*.egg-info/
 **/__pycache__/
 .pytest_cache/
 .ruff_cache/
+
+# Frontend
+apps/frontend/node_modules/
+apps/frontend/dist/
 frontend/node_modules/
 frontend/dist/
-*.tsbuildinfo
+
+# Run launcher logs
 .run/

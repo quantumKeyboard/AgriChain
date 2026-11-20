@@ -1,0 +1,12 @@
+{
+  "name": "backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "start": "node scripts/dev.js",
+    "lint": "node scripts/run.js ruff check .",
+    "format": "node scripts/run.js ruff format .",
+    "test": "node scripts/run.js pytest -q"
+  }
+}
